@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>シラバス / 時間割作成ツール 公開版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4efe6;
+            --surface-color: rgba(255, 252, 247, 0.92);
+            --surface-strong: #fffdf8;
+            --primary-color: #20384f;
+            --secondary-color: #d86f45;
+            --secondary-strong: #b7552c;
+            --accent-color: #f0c36a;
+            --hover-color: #f5eee3;
+            --border-color: #d8c9b4;
+            --muted-color: #6d6a66;
+            --success-color: #2f7d5b;
+            --danger-color: #b93f34;
+            --shadow-soft: 0 14px 34px rgba(58, 41, 26, 0.08);
+            --shadow-card: 0 8px 20px rgba(58, 41, 26, 0.08);
+        }
+        body {
+            font-family: 'Avenir Next', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background:
+                radial-gradient(circle at top left, rgba(240, 195, 106, 0.35), transparent 28%),
+                linear-gradient(180deg, #fcfaf5 0%, var(--bg-color) 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px);
+            background-size: 28px 28px;
+            opacity: 0.32;
+        }
+        * { box-sizing: border-box; }
+        /* ヘッダー周り */
+        .header-panel {
+            background: var(--surface-color);
+            backdrop-filter: blur(14px);
+            padding: 22px 24px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-soft);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            border: 1px solid rgba(255,255,255,0.65);
+            position: relative;
+            z-index: 1;
+        }
+        .hero-copy { max-width: 680px; }
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(240, 195, 106, 0.2);
+            color: var(--primary-color);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+        h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 3vw, 2.6rem); color: var(--primary-color); line-height: 1.1; }
+        .hero-copy p {
+            margin: 0;
+            color: var(--muted-color);
+            line-height: 1.6;
+            font-size: 0.98rem;
+        }
+        .upload-card {
+            min-width: 300px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(216, 201, 180, 0.7);
+            border-radius: 18px;
+            padding: 16px;
+            box-shadow: var(--shadow-card);
+        }
+        .upload-grid {
+            display: grid;
+            gap: 12px;
+        }
+        .upload-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 0.9rem;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        .upload-field input[type="file"],
+        .upload-field select,
+        .filter-box input[type="text"],
+        .filter-box select,
+        .col-settings select {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 12px;
+            font-size: 0.95rem;
+            color: #2f2c29;
+        }
+        .micro-copy {
+            margin: 2px 0 0;
+            color: var(--muted-color);
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+        
+        /* PC向け2カラムレイアウト */
+        .main-wrapper {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* 左カラム：検索・一覧 */
+        .left-pane {
+            flex: 3;
+            min-width: 0; 
+            display: none; 
+        }
+        
+        /* 右カラム：マイ時間割 (スクロール追従) */
+        .right-pane {
+            flex: 2;
+            position: sticky;
+            top: 20px;
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-soft);
+            min-width: 390px;
+            display: none; 
+            border: 1px solid rgba(255,255,255,0.65);
+        }
+
+        /* 絞り込みパネル */
+        .controls {
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: var(--shadow-soft);
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.65);
+        }
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .section-title h2,
+        .section-title h3,
+        .filter-box h3,
+        .tt-header h3 {
+            margin: 0;
+            color: var(--primary-color);
+            font-size: 1.02rem;
+        }
+        .section-note {
+            font-size: 0.85rem;
+            color: var(--muted-color);
+        }
+        .flex-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 30px;
+        }
+        
+        /* 絞り込みマトリックスUI */
+        .timetable-box { flex: 0 0 auto; }
+        .tt-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; }
+        .col-settings { background: rgba(244, 239, 230, 0.75); padding: 14px; border-radius: 14px; font-size: 0.85rem; margin-bottom: 12px; border: 1px solid var(--border-color); }
+        .setting-group { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; align-items: center; }
+        .setting-group:last-child { margin-bottom: 0; }
+        .setting-group label { font-weight: bold; min-width: 70px; }
+        
+        table.matrix { border-collapse: separate; border-spacing: 4px; margin-bottom: 10px; }
+        table.matrix th, table.matrix td { border: 1px solid var(--border-color); padding: 10px 12px; text-align: center; font-size: 0.9rem; border-radius: 12px; }
+        table.matrix th { background-color: rgba(255,255,255,0.76); }
+        table.matrix td { cursor: pointer; user-select: none; transition: 0.1s; }
+        table.matrix td:hover { background-color: var(--hover-color); }
+        table.matrix td.selected { background-color: var(--secondary-color); color: #fff; font-weight: bold; border-color: var(--secondary-strong); transform: translateY(-1px); }
+        .tt-options { font-size: 0.9rem; margin-top: 10px;}
+        .tt-options label { margin-right: 10px; cursor: pointer; }
+        .btn-clear, .btn-secondary {
+            font-size: 0.85rem;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 999px;
+            border: 1px solid var(--border-color);
+            background: rgba(255,255,255,0.8);
+            color: var(--primary-color);
+            font-weight: 700;
+        }
+        .btn-clear:hover, .btn-secondary:hover { background: var(--hover-color); }
+        
+        /* テキスト・セレクトボックス絞り込みUI */
+        .filter-box { flex: 1 1 300px; display: flex; flex-direction: column; gap: 12px; }
+        .chk-group-container { border: 1px solid var(--border-color); border-radius: 14px; padding: 8px 12px; background: rgba(255,255,255,0.8); }
+        .chk-group-title { font-size: 0.9rem; font-weight: bold; color: var(--primary-color); margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .chk-list { max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+        .chk-list label { font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+        .chk-list input[type="checkbox"] { margin: 0; cursor: pointer; }
+        .filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .status-strip,
+        .active-filters {
+            background: rgba(255,255,255,0.72);
+            border: 1px solid rgba(216, 201, 180, 0.8);
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+        .status-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .status-main {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            padding: 8px 12px;
+            background: rgba(32, 56, 79, 0.08);
+            color: var(--primary-color);
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+        .status-badge strong {
+            font-size: 1rem;
+        }
+        .hint-text {
+            color: var(--muted-color);
+            font-size: 0.88rem;
+        }
+        .filter-pill-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .filter-pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(216, 111, 69, 0.1);
+            color: var(--secondary-strong);
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        /* 左カラム：データテーブル */
+        .table-container {
+            overflow-x: auto;
+            background: var(--surface-color);
+            border-radius: 20px;
+            box-shadow: var(--shadow-soft);
+            max-height: 800px;
+            border: 1px solid rgba(255,255,255,0.65);
+        }
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th, .data-table td { border: 1px solid var(--border-color); padding: 8px; font-size: 0.85rem; }
+        .data-table th { background-color: #f6f1e8; position: sticky; top: 0; cursor: pointer; user-select: none; z-index: 1; white-space: nowrap; color: var(--primary-color); }
+        .data-table td { white-space: normal; word-wrap: break-word; overflow-wrap: break-word; max-width: 200px; line-height: 1.4; }
+        .data-table th:hover { background-color: var(--hover-color); }
+        .data-table tbody tr:hover { background-color: rgba(255,255,255,0.65); }
+        .sort-icon::after { content: ' \21C5'; color: #ccc; font-size: 0.8em; }
+        .sort-asc::after { content: ' \2191'; color: var(--secondary-color); font-weight: bold;}
+        .sort-desc::after { content: ' \2193'; color: var(--secondary-color); font-weight: bold;}
+        .stats { margin-bottom: 12px; font-weight: bold; color: var(--primary-color); }
+        
+        /* 授業追加ボタン */
+        .btn-add { background: var(--secondary-color); color: white; border: none; padding: 8px 12px; border-radius: 999px; cursor: pointer; font-size: 0.8rem; font-weight: bold; white-space: nowrap; transition: 0.2s;}
+        .btn-add:hover { background: var(--secondary-strong); }
+        .btn-add.is-added {
+            background: rgba(47, 125, 91, 0.14);
+            color: var(--success-color);
+            border: 1px solid rgba(47, 125, 91, 0.24);
+        }
+        .btn-add.is-added:hover {
+            background: rgba(47, 125, 91, 0.2);
+        }
+
+        /* 右カラム：マイ時間割表 */
+        .my-timetable-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid var(--primary-color); padding-bottom: 5px;}
+        .my-timetable-header h2 { margin: 0; font-size: 1.3rem; color: var(--primary-color); }
+        .schedule-meta {
+            margin-bottom: 12px;
+            color: var(--muted-color);
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+        table.personal-timetable { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        table.personal-timetable th, table.personal-timetable td { border: 1px solid var(--border-color); text-align: center; vertical-align: top; word-break: break-all; }
+        table.personal-timetable th { background-color: #f6f1e8; font-size: 0.9rem; padding: 6px; color: var(--primary-color); }
+        table.personal-timetable td { background-color: rgba(255,255,255,0.68); padding: 6px; min-height: 90px; }
+        
+        /* 時間割のセル内ブロック */
+        .class-block {
+            background: #fffdfa;
+            border: 1px solid var(--secondary-color);
+            border-left: 4px solid var(--secondary-color);
+            border-radius: 10px;
+            padding: 6px;
+            margin-bottom: 6px;
+            text-align: left;
+            position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            font-size: 0.8rem;
+        }
+        .class-block:last-child { margin-bottom: 0; }
+        .cell-subject { font-weight: bold; margin-bottom: 4px; padding-right: 14px; color: var(--primary-color); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .cell-teacher { font-size: 0.75rem; color: #555; }
+        .cell-room { font-size: 0.7rem; color: var(--secondary-color); margin-top: 2px; }
+        .btn-remove { position: absolute; top: 6px; right: 6px; background: var(--danger-color); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; opacity: 0.85;}
+        .btn-remove:hover { opacity: 1; }
+        .empty-state {
+            padding: 34px 20px;
+            text-align: center;
+            color: var(--muted-color);
+            line-height: 1.7;
+        }
+        .empty-state strong {
+            display: block;
+            color: var(--primary-color);
+            font-size: 1rem;
+            margin-bottom: 6px;
+        }
+        .table-empty {
+            padding: 26px 18px;
+            text-align: center;
+            color: var(--muted-color);
+        }
+        .footer-note {
+            margin-top: 18px;
+            color: var(--muted-color);
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+        @media (max-width: 1100px) {
+            .header-panel,
+            .main-wrapper {
+                flex-direction: column;
+            }
+            .upload-card,
+            .right-pane {
+                width: 100%;
+                min-width: 0;
+            }
+            .right-pane {
+                position: static;
+            }
+        }
+        @media (max-width: 720px) {
+            body {
+                padding: 14px;
+            }
+            .header-panel,
+            .controls,
+            .table-container,
+            .right-pane {
+                border-radius: 16px;
+            }
+            table.matrix th,
+            table.matrix td,
+            .data-table th,
+            .data-table td,
+            table.personal-timetable th,
+            table.personal-timetable td {
+                font-size: 0.78rem;
+                padding: 6px;
+            }
+            .status-strip {
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-panel">
+        <div class="hero-copy">
+            <div class="eyebrow">Syllabus Planner</div>
+            <h1>シラバスから、迷わず時間割を組む</h1>
+            <p>公開用データを最初から内蔵した単一HTMLです。ページを開くとすぐ授業一覧が出て、曜日・時限・キーワードで絞り込みながら右側のマイ時間割へ追加できます。</p>
+        </div>
+        <div class="upload-card">
+            <div class="upload-grid">
+                <label class="upload-field">手元のCSVで差し替える
+                    <input type="file" id="csvFileInput" accept=".csv" />
+                </label>
+                <label class="upload-field">文字コード
+                    <select id="encodingSelect">
+                        <option value="UTF-8" selected>UTF-8</option>
+                        <option value="Shift_JIS">Shift_JIS (Excel標準)</option>
+                    </select>
+                </label>
+                <p class="micro-copy">公開版ではCSVを埋め込み済みです。必要があればこの欄から別のCSVに差し替えられます。Excel書き出しは `Shift_JIS` が合うことがあります。</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <div class="left-pane" id="leftPane">
+            <div class="controls">
+                <div class="section-title">
+                    <h2>検索と絞り込み</h2>
+                    <div class="section-note">授業候補を探して、そのまま時間割に追加できます</div>
+                </div>
+                <div class="status-strip">
+                    <div class="status-main">
+                        <div class="status-badge">表示中 <strong id="resultCountBadge">0</strong></div>
+                        <div class="status-badge">登録済み <strong id="scheduleCountBadge">0</strong></div>
+                    </div>
+                    <div class="hint-text" id="datasetInfo">埋め込み済みデータを読み込んでいます。</div>
+                </div>
+                <div class="active-filters">
+                    <div class="section-title" style="margin-bottom: 10px;">
+                        <h3>現在の絞り込み</h3>
+                        <button class="btn-secondary" type="button" onclick="resetFilters()">絞り込みをリセット</button>
+                    </div>
+                    <div class="filter-pill-list" id="activeFilters"></div>
+                </div>
+                <div class="flex-container">
+                    <div class="timetable-box" id="timetableBox">
+                        <div class="tt-header">
+                            <h3>曜日・時限で絞り込み</h3>
+                            <button class="btn-clear" onclick="clearMatrix()">選択をクリア</button>
+                        </div>
+                        
+                        <div class="col-settings">
+                            <div class="setting-group">
+                                <label>曜日列:</label> <select id="colDaySelect" onchange="onFilterColumnChange()"></select>
+                                <label style="margin-left: 10px;">時限列:</label> <select id="colPeriodSelect" onchange="onFilterColumnChange()"></select>
+                            </div>
+                            <hr style="border: 0; border-top: 1px solid #ddd; margin: 10px 0;">
+                            <div class="setting-group" style="font-size: 0.8rem; color: #555;">▼ 時間割ブロックの表示項目</div>
+                            <div class="setting-group">
+                                <label>科目名:</label> <select id="colSubjectSelect" onchange="onDisplayColumnChange()"></select>
+                                <label style="margin-left: 10px;">教員名:</label> <select id="colTeacherSelect" onchange="onDisplayColumnChange()"></select>
+                                <label style="margin-left: 10px;">教室名:</label> <select id="colRoomSelect" onchange="onDisplayColumnChange()"></select>
+                            </div>
+                        </div>
+
+                        <table class="matrix" id="matrixTable"></table>
+                        
+                        <div class="tt-options">
+                            <label><input type="radio" name="ttMode" value="filter" checked onchange="updateView()"> 選んだコマで絞り込む</label><br>
+                            <label><input type="radio" name="ttMode" value="sort" onchange="updateView()"> 選んだコマを上に表示 (ソート)</label>
+                        </div>
+                    </div>
+
+                    <div class="filter-box">
+                        <h3>詳細絞り込み</h3>
+                        <input type="text" id="keywordInput" placeholder="キーワード検索 (科目名, 担当教員など...)" onkeyup="updateView()">
+                        <select id="termSelect" onchange="updateView()"><option value="">すべての学期</option></select>
+                        
+                        <div class="chk-group-container" id="deptContainer" style="display: none;">
+                            <div class="chk-group-title">学科 (複数選択可)</div>
+                            <div class="chk-list" id="deptCheckboxes"></div>
+                        </div>
+
+                        <div class="chk-group-container" id="categoryContainer" style="display: none;">
+                            <div class="chk-group-title">区分 (複数選択可)</div>
+                            <div class="chk-list" id="categoryCheckboxes"></div>
+                        </div>
+                        <div class="filter-actions">
+                            <button class="btn-secondary" type="button" onclick="resetFilters()">条件を初期化</button>
+                            <button class="btn-secondary" type="button" onclick="clearSchedule()">時間割をクリア</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats" id="resultCount"></div>
+
+            <div class="table-container">
+                <table class="data-table" id="dataTable">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="right-pane" id="rightPane">
+            <div class="my-timetable-header">
+                <h2>マイ時間割</h2>
+                <button class="btn-clear" onclick="clearSchedule()">全てクリア</button>
+            </div>
+            <div class="schedule-meta" id="scheduleMeta">授業を追加すると、ここに曜日ごとの配置が表示されます。</div>
+            <table class="personal-timetable" id="myTimetable">
+                <thead>
+                    <tr>
+                        </tr>
+                </thead>
+                <tbody>
+                    </tbody>
+            </table>
+            <div class="footer-note">同じ授業が複数コマにまたがる場合もまとめて追加されます。登録内容は同じCSVを再読み込みしたときに自動で復元されます。</div>
+        </div>
+    </div>
+
+<script id="embeddedCsvData" type="text/plain">
+学期,曜日,時限,区分,学科,入学年度,回生,授業ＣＤ,科目名,クラス,単位,担当教員,教室,登録方法
+春学期,月,1-2,教養D,全,26-16,1,34982,スポーツ方法実習Ⅰ(A)【バスケットボール】,2,1,櫻木 規美子,１アリーナ,抽選
+春学期,月,1-2,専門,電,24-20,3,32453,電動移動機械システム,B8,2,"川畑 良尚、峯元 高志、福水 洋平、伊藤隆基、山末 英嗣",Ｃ３０５,本
+春学期,月,1-2,専門,電,23-16,4,32455,情報通信システム,T8,2,野坂 秀之,Ｆ３０６,本
+春学期,月,3-4,教養A,全,26-16,1,34879,社会と福祉,TB,2,大平 眞太郎,Ｃ４０２,抽選
+春学期,月,3-4,教養B,全,26-16,1,34946,Introductory Course to International Project Development,G1,2,稲澤 泉,-,本
+春学期,月,3-4,教養D,全,26-16,1,34983,スポーツ方法実習Ⅰ(A)【テニス】,3,1,櫻木 規美子,テニス C,抽選
+春学期,月,3-4,教養D,全,26-16,1,35002,スポーツ方法実習Ⅰ(C)【卓球】,2,1,渡邊 雅也,２アリーナ,抽選
+春学期,月,3-4,基礎専,情,26-20,1,31959,数学演習Ⅰ（微分積分・線形代数）,6F,1,岡田 薫,Ｆ１０７,本
+春学期,月,3-4,基礎専,情,19-16,1,31960,数学演習Ⅰ,6U,1,岡田 薫,Ｆ１０７,本
+春学期,月,3-4,基礎専,情,26-20,1,31961,数学演習Ⅰ（微分積分・線形代数）,6G,1,野本 統一,Ｆ１０８,本
+春学期,月,3-4,基礎専,情,19-16,1,31962,数学演習Ⅰ,6V,1,野本 統一,Ｆ１０８,本
+春学期,月,3-4,基礎専,情,26-20,1,31963,数学演習Ⅰ（微分積分・線形代数）,6H,1,結城 郷,Ｆ１１０,本
+春学期,月,3-4,基礎専,情,19-16,1,31964,数学演習Ⅰ,6W,1,結城 郷,Ｆ１１０,本
+春学期,月,3-4,基礎専,電・情,25-16,2,32058,物質科学,GA,2,未定,Ｆ３０１,本
+春学期,月,3-4,基礎専,電,26-20,1,32127,力学入門演習,A8,1,野坂 秀之,Ｆ３０４,本
+春学期,月,3-4,基礎専,電,19-16,1,32128,物理学演習Ⅰ,X8,1,野坂 秀之,Ｆ３０４,本
+春学期,月,3-4,基礎専,電,26-20,1,32129,力学入門演習,B8,1,柿ヶ野 浩明,Ｆ３０５,本
+春学期,月,3-4,基礎専,電,19-16,1,32130,物理学演習Ⅰ,Y8,1,柿ヶ野 浩明,Ｆ３０５,本
+春学期,月,3-4,専門,電,25-16,2,32410,アルゴリズムとデータ構造,B8,2,西門 秀人,Ｆ２０６,本
+春学期,月,3-4,専門,電,24-20,3,32451,電動移動機械システム,A8,2,"川畑 良尚、峯元 高志、福水 洋平、伊藤隆基、山末 英嗣",Ｃ４０３,本
+春学期,月,3-4,専門,情,24-16,3,32505,確率統計,6A,2,福井 正博,情処演P32,本
+春学期,月,5-6,立命館/教養A,全,26-20/19-16,1,34792,日本国憲法,G1,2,坂田 隆介,Ｃ１０１,抽選
+春学期,月,5-6,教養D,全,26-16,1,35000,スポーツ方法実習Ⅰ(B)【バレーボール】,6,1,菅 唯志,１アリーナ,抽選
+春学期,月,5-6,教養D,全,26-16,1,35007,スポーツ方法実習Ⅰ(D)【バドミントン】,1,1,永原 悠利,２アリーナ,抽選
+春学期,月,5-6,教養E,全,26-16,1,35053,"教養ゼミナール ※テーマは、シラバスを確認してください。",38,2,北村 佳久,Ｃ５０６,抽選
+春学期,月,5-6,教養E,全,26-16,1,54683,"教養ゼミナール ※テーマは、シラバスを確認してください。",60,2,"清家 理、荒井 秀典、森永 貴彦",【OIC】H201,抽選
+春学期,月,5-6,基礎専,全,26-16,1,31797,化学１,TA,2,大岡 宏造,Ｃ３０２,本
+春学期,月,5-6,基礎専,情,26-20,1,31906,数学Ⅲ（線形代数）,6T,2,松田 凌,Ｆ２０４,本
+春学期,月,5-6,基礎専,情,19-16,1,31907,数学Ⅲ,6X,2,松田 凌,Ｆ２０４,本
+春学期,月,5-6,専門,電,25-16,2,32411,プログラミング演習,A8,1,毛利 真一郎,Ｃ６０５,本
+春学期,月,5-6,専門,電,25-16,2,32412,プログラミング演習,B8,1,岡野 訓尚,Ｃ６０６,本
+春学期,月,5-6,専門,電,24-16,3,32415,電気電子数学演習,A8,1,久保 幸弘,Ｆ１１０,本
+春学期,月,5-6,専門,電,23-16,4,32458,画像処理工学,T8,2,福水 洋平,Ｃ４０３,本
+春学期,月,5-6,専門,情,25-16,2,32476,コンピュータアーキテクチャⅠ,6T,2,孟 林,Ｆ２０５,本
+春学期,月,7-8,立命館,全,26-20,1,34787,ジェンダーとダイバーシティ,T,2,土岐 智賀子,Ｃ４０２,抽選
+春学期,月,7-8,教養A,全,19-16,1,34788,ジェンダー論,T,2,土岐 智賀子,Ｃ４０２,抽選
+春学期,月,7-8,立命館/教養A,全,26-20/19-16,1,34793,日本国憲法,G2,2,坂田 隆介,Ｃ１０１,抽選
+春学期,月,7-8,教養D,全,26-16,1,34994,スポーツ方法実習Ⅰ(A)【ヨガ】,14,1,佐久間 新,ｽﾎﾟｺﾓ多目的,抽選
+春学期,月,7-8,教養D,全,26-16,1,35003,スポーツ方法実習Ⅰ(C)【エクササイズ】,3,1,櫻木 規美子,トレ R,抽選
+春学期,月,7-8,教養D,全,26-16,1,35012,スポーツ方法実習Ⅰ(D)【バドミントン】,6,1,菅 唯志,２アリーナ,抽選
+春学期,月,7-8,教養E,全,26-16,1,17096,"教養ゼミナール ※テーマは、シラバスを確認してください。",10,2,辻 高明,【衣笠】清SE206,抽選
+春学期,月,7-8,教養E,全,26-16,1,17089,"教養ゼミナール ※テーマは、シラバスを確認してください。",3,2,リム・ボン,【衣笠】志SG303,抽選
+春学期,月,7-8,自由,情,26-16,1のみ,32185,"数学基礎 ※対象者以外の受講希望者は事務室受付",6T,2,岡田 薫,Ｆ１０７,事務室
+春学期,月,7-8,専門,電,26-16,1,32379,電気電子工学入門,A8,2,"毛利 真一郎、久保 幸弘",Ｆ１０２,事務室
+春学期,月,7-8,専門,電,26-16,1,32380,電気電子工学入門,B8,2,佐野 明秀,Ｆ１０９,事務室
+春学期,月,7-8,専門,電,26-16,1,32381,電気電子工学入門,C8,2,岡野 訓尚,Ｆ１１０,事務室
+春学期,月,7-8,専門,電,26-16,1,32382,電気電子工学入門,D8,2,野坂 秀之,Ｆ１１１,事務室
+春学期,月,7-8,専門,電,25-16,2,32399,統計物理学,T8,2,沼居 貴陽,Ｃ２０１,本
+春学期,月,7-10,専門,電,24-16,3,32423,電気電子工学実験Ⅲ,A8,2,"瀧口 浩一、難波 巧、繁田 光浩、藤井 茉美","EX1 1階 電気電子工学第1応用実験室",本
+春学期,月,7-8,専門,情,25-16,2,32473,半導体工学,6T,2,"大倉 俊介、宮内 健",Ｃ２０４,本
+春学期,月,7-8,専門,情,24-16,3,32506,確率統計,6B,2,福井 正博,情処演P33,本
+春学期,月,7-8,専門,情,19-16,4,32512,プロセッサデザイン,6X,2,熊木 武志,Ｆ１０８,本
+春学期,月,9-10,教養A,全,26-20,1,34908,材料と化学,G1,2,"五月女 宜裕、越山 友美、加藤 稔",Ｃ２０３,抽選
+春学期,月,9-10,教養B,全,26-16,1,15266,Introduction to Peace Studies,RA,2,クロス 京子,【衣笠】明MG001,選考
+春学期,月,9-10,教養E,全,24-20,3,17121,"超領域リベラルアーツ ※テーマは、シラバスを確認してください。",GU,2,"土元 哲平、川村 仁子、湊 宣明、佐伯 和人、仲内 悠祐、長岡 央、山出 美弥、福留 未菜",-,抽選
+春学期,月,9-10,基礎専,電,19-16,1,31824,"情報処理 ※2019年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",X8,2,岡野 訓尚,Ｆ１０１,本
+春学期,月,9-10,専門,電,25-16,2,32409,アルゴリズムとデータ構造,A8,2,福水 洋平,Ｆ３０４,本
+春学期,月,9-10,専門,情,26-16,1,32463,電子情報工学入門,6A,2,"孟 林、三木 信彦、AHMAD A. AMINUDDIN","ﾛｰﾑ記念館5階大会議室および情処演Ｐ26(1～5回目はﾛｰﾑで実施)",事務室
+春学期,月,9-10,専門,情,26-16,1,32464,電子情報工学入門,6B,2,"AHMAD A. AMINUDDIN、孟 林、三木 信彦","ﾛｰﾑ記念館5階大会議室および情処演Ｐ32(1～5回目はﾛｰﾑで実施)",事務室
+春学期,月,9-10,専門,情,26-16,1,32465,電子情報工学入門,6C,2,"三木 信彦、孟 林、AHMAD A. AMINUDDIN","ﾛｰﾑ記念館5階大会議室および情処演Ｐ33(1～5回目はﾛｰﾑで実施)",事務室
+春学期,月,11-12,教養E,全,24-20,3,17117,"超領域リベラルアーツ ※テーマは、シラバスを確認してください。",GS,2,"山中 司、サトウ タツヤ、西浦 敬信、島田 伸敬、谷口 忠大、木村 修平",Ａ２０２,抽選
+春学期,月,@,教養A,全,26-20,1,34923,"データサイエンス・AI基礎 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G1,2,西門 秀人,-,抽選
+春学期,火,1-2,教養A,全,26-16,1,34812,哲学と人間,TA,2,福井 雅美,Ｐ２０１,抽選
+春学期,火,1-2,教養D,全,26-16,1,34974,スポーツのサイエンス,G2,2,村上 嘉野,Ｃ３０２,抽選
+春学期,火,1-2,教養D,全,26-16,1,34981,スポーツ方法実習Ⅰ(A)【バスケットボール】,1,1,岩瀬 雅紀,１アリーナ,抽選
+春学期,火,1-2,教養D,全,26-16,1,34988,スポーツ方法実習Ⅰ(A)【ソフトボール】,8,1,西川 太智,第１ G,抽選
+春学期,火,1-2,教養D,全,26-16,1,35009,スポーツ方法実習Ⅰ(D)【バドミントン】,3,1,井上 翔太,２アリーナ,抽選
+春学期,火,1-2,教養E,全,26-16,1,17087,"教養ゼミナール ※テーマは、シラバスを確認してください。",1,2,堀 雅晴,【衣笠】存ZS204,抽選
+春学期,火,1-2,基礎専,全,26-20,1,32145,技術者倫理,TA,2,田岡 直規,Ｃ３０１,本
+春学期,火,1-2,基礎専,全,19-16,1,32146,特殊講義（基礎専門）Ⅰ（技術者倫理）,X,2,田岡 直規,Ｃ３０１,本
+春学期,火,1-4,専門,電,25-16,2,32401,電気電子工学実験Ⅰ,A8,2,"佐野 明秀、峯元 高志、岡野 訓尚、諏訪田 剛","EX1 1階 電気電子工学第1応用実験室",本
+春学期,火,1-2,専門,情,23-20,4,32519,特殊講義（専門）Ⅲ（深層学習の応用）,6T,2,中山 良平,情処演C21,本
+春学期,火,3-4,教養A,全,26-16,1,34818,心理学入門,TA,2,恒松 伸,Ｃ３０２,抽選
+春学期,火,3-4,教養B,全,26-16,1,15291,Introduction to Gender Studies,RA,2,KIM VIKTORIYA,【衣笠】明MG002,選考
+春学期,火,3-4,教養B,全,26-20,1.2のみ,31052,Cross-cultural Encounters 1,G1,2,田村 優,Ｃ５０９,抽選
+春学期,火,3-4,教養B,全,19-16,1,31053,Cross-cultural Encounters,G1,2,田村 優,Ｃ５０９,抽選
+春学期,火,3-4,教養D,全,26-16,1,34973,スポーツのサイエンス,G1,2,岡松 秀房,Ｃ３０４,抽選
+春学期,火,3-4,教養D,全,26-16,1,34984,スポーツ方法実習Ⅰ(A)【バスケットボール】,4,1,藤江 隼平,１アリーナ,抽選
+春学期,火,3-4,教養E,全,26-16,1,17088,"教養ゼミナール ※テーマは、シラバスを確認してください。",2,2,竹浜 修,【衣笠】存ZS408,抽選
+春学期,火,3-4,教養E,全,26-16,1,17091,"教養ゼミナール ※テーマは、シラバスを確認してください。",5,2,竹濱 朝美,【衣笠】以IG208,抽選
+春学期,火,3-4,教養E,全,26-16,1,17094,"教養ゼミナール ※テーマは、シラバスを確認してください。",8,2,矢野 健一,【衣笠】敬KG106,抽選
+春学期,火,3-4,基礎専,数・物・電・情・機・ロ・建,25-16,2,31806,"環境科学 ※環境都市工学科は受講不可",TD,2,"神子 直之、本間 亮介、市木 敦之",Ｃ３０１,本
+春学期,火,3-4,基礎専,情,26-20,1,32087,熱力学入門,6T,2,大坂 寿之,Ｆ３０４,本
+春学期,火,3-4,基礎専,全,26-16,1～4のみ,32151,"専門ゼミナール【３分で「なるほど！」へ：英語プレゼンテーション設計と実演】 ※専門ゼミナール【主体的な海外活動実践の技法】、【理工系学生のためのすぐに使える英文メールライティング講座】を修得済または【主体的な海外活動実践の技法】を当該科目と同開講時期に履修を希望する学生は、当該科目の受講登録期間終了までに理工学部事務室に来室ください。※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TC,2,浅井 静代,Ｆ１１２,抽選
+春学期,火,3-4,専門,電,26,1,32391,"論理回路 ※2026年度以降入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",A8,2,藤井 茉美,Ｆ１０８,本
+春学期,火,3-4,専門,電,26,1,32392,"論理回路 ※2026年度以降入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",B8,2,今井 茂,Ｆ１０１,本
+春学期,火,3-4,専門,電,24-16,3,32418,電子回路Ⅱ,A8,2,野坂 秀之,Ｆ３０５,本
+春学期,火,3-4,専門,電,24-16,3,32419,電子回路Ⅱ,B8,2,宇野 重康,Ｆ３０６,本
+春学期,火,3-4,専門,情,25-16,2,32470,電気回路Ⅱ,6T,2,大倉 俊介,Ｃ１０８,本
+春学期,火,3-4,専門,情,23-20,4,32518,電子情報工学通論,6T,2,"泉 知論、藤田 智弘、藤野 毅、田中 亜実、馬杉 正男、冨山 宏之、熊木 武志、孟 林、佐保 賢志、中山 良平、LI QI、三木 信彦、AHMAD A. AMINUDDIN",Ｆ２０６,本
+春学期,火,5-6,教養A,全,26-20,1,34913,近現代の科学技術,G1,2,"山本 憲隆、永井 清",Ｃ４０２,抽選
+春学期,火,5-6,教養C,全,26-20/19-16,1.2のみ/1,34956,地域参加学習入門,G1,2,高橋 結,Ｃ４０１,抽選
+春学期,火,5-6,教養E,全,26-16,1,35051,"教養ゼミナール ※テーマは、シラバスを確認してください。",36,2,"稲田 康宏、中本 トラン、折笠 有基、毛利 真一郎",Ｃ５１０,抽選
+春学期,火,5-6,教養E,全,26-16,1,35047,"教養ゼミナール ※テーマは、シラバスを確認してください。",32,2,金丸 裕一,Ａ３０３,抽選
+春学期,火,5-6,教養E,全,26-16,1,54678,"教養ゼミナール ※テーマは、シラバスを確認してください。",55,2,小久保 みどり,【OIC】AS261,抽選
+春学期,火,5-6,基礎専,全,26-16,1,32055,宇宙地球科学２,TE,2,一本 潔,Ｃ３０４,本
+春学期,火,5-6,自由,情,26-16,1のみ,32196,"物理基礎 ※対象者以外の受講希望者は事務室受付",6T,2,濱地 賢太郎,Ｐ１１１,事務室
+春学期,火,5-6,専門,電,24-16,3,32416,電気電子数学演習,B8,1,藤枝 一郎,Ｃ１０７,本
+春学期,火,5-6,専門,電,24-16,3,32417,電気電子数学演習,C8,1,難波 巧,Ｃ１０４,本
+春学期,火,5-6,専門,電,25-20,2,32447,光学Ⅰ,B8,2,佐野 明秀,Ｆ３０１,本
+春学期,火,5-6,専門,電,19-16,3,32448,波動光学,Y8,2,佐野 明秀,Ｆ３０１,本
+春学期,火,5-6,専門,情,24-16,3,32517,特殊講義（専門）Ⅱ（システム設計ＣＡＤ）,6T,2,"泉 知論、田中 亜実",EW3階ＦＰGAデザインルーム,選考
+春学期,火,7-8,立命館,全,26-20,1,34802,現代平和論,G1,2,"中野 克彦、伊藤 恵子",Ｃ２０４,抽選
+春学期,火,7-8,教養A,全,19-16,1,34803,平和学入門,G1,2,"中野 克彦、伊藤 恵子",Ｃ２０４,抽選
+春学期,火,7-8,教養A,全,26-20,1,34852,音楽原論,G1,2,舩木 理悠,Ｃ２０１,抽選
+春学期,火,7-8,教養E,全,26-16,1,17090,"教養ゼミナール ※テーマは、シラバスを確認してください。",4,2,小泉 秀昭,【衣笠】以IGV-Lab2,抽選
+春学期,火,7-8,教養E,全,26-16,1,35045,"教養ゼミナール ※テーマは、シラバスを確認してください。",30,2,野澤 健,Ｒ３０４,抽選
+春学期,火,7-8,基礎専,電,26-20,1,31951,数学演習Ⅰ（微分積分・線形代数）,K8,1,川村 勝紀,Ｆ１０７,本
+春学期,火,7-8,基礎専,電,19-16,1,31952,数学演習Ⅰ,S8,1,川村 勝紀,Ｆ１０７,本
+春学期,火,7-8,基礎専,電,26-20,1,31953,数学演習Ⅰ（微分積分・線形代数）,L8,1,藤井 慎一,Ｆ１０８,本
+春学期,火,7-8,基礎専,電,19-16,1,31954,数学演習Ⅰ,T8,1,藤井 慎一,Ｆ１０８,本
+春学期,火,7-8,基礎専,電,26-20,1,31955,数学演習Ⅰ（微分積分・線形代数）,M8,1,北沢 孝司,Ｆ１０９,本
+春学期,火,7-8,基礎専,電,19-16,1,31956,数学演習Ⅰ,U8,1,北沢 孝司,Ｆ１０９,本
+春学期,火,7-8,基礎専,電,26-20,1,31957,数学演習Ⅰ（微分積分・線形代数）,N8,1,結城 郷,Ｆ１１１,本
+春学期,火,7-8,基礎専,電,19-16,1,31958,数学演習Ⅰ,V8,1,結城 郷,Ｆ１１１,本
+春学期,火,7-8,基礎専,全,26-16,1,32056,宇宙地球科学２,TF,2,一本 潔,Ｃ３０２,本
+春学期,火,7-8,基礎専,情,26-20,1,32131,力学入門演習,6A,1,大坂 寿之,Ｃ６０５,本
+春学期,火,7-8,基礎専,情,19-16,1,32132,物理学演習Ⅰ,6X,1,大坂 寿之,Ｃ６０５,本
+春学期,火,7-8,基礎専,情,26-20,1,32133,力学入門演習,6B,1,小泉 耕蔵,Ｃ６０６,本
+春学期,火,7-8,基礎専,情,19-16,1,32134,物理学演習Ⅰ,6Y,1,小泉 耕蔵,Ｃ６０６,本
+春学期,火,7-8,専門,電,25-16,2,32395,フーリエ解析,A8,2,藤枝 一郎,Ｆ３０４,本
+春学期,火,7-8,専門,電,25-16,2,32396,フーリエ解析,B8,2,久保 幸弘,Ｆ３０６,本
+春学期,火,7-8,専門,電,24-16,3,32427,電気機器工学,T8,2,川畑 良尚,Ｆ３０１,本
+春学期,火,7-8,専門,情,24-16,3,32510,メディア情報処理,6T,2,中山 良平,情処演C22,本
+春学期,火,9-10,教養A,全,26-16,1,34824,科学技術と倫理,TA,2,平尾 昌宏,Ｃ３０４,抽選
+春学期,火,9-10,教養A,全,26-16,1,34861,現代社会と法,G1,2,竹浜 修,Ｃ２０４,抽選
+春学期,火,9-10,教養B,全,26-16,1,54625,Non-verbal Communication,GV,2,谷村 緑,【OIC】C373,本
+春学期,火,9-10,教養E,全,26-16,1,17103,"教養ゼミナール ※テーマは、シラバスを確認してください。",17,2,勝村 誠,【衣笠】存ZS302,抽選
+春学期,火,9-10,基礎専,全,26-16,1,32053,宇宙地球科学２,TC,2,玉井 雅人,Ｃ３０３,本
+春学期,火,9-10,基礎専,電,26-20,1,32085,熱力学入門,A8,2,松本 雅生,Ｆ２０５,本
+春学期,火,9-10,基礎専,電,26-20,1,32086,熱力学入門,B8,2,小泉 耕蔵,Ｆ２０６,本
+春学期,火,9-10,専門,情,25-16,2,32481,データ構造とアルゴリズム,6T,2,LI QI,Ｃ４０３,本
+春学期,火,@,教養B,全,26-20,1,31066,"Cross-cultural Encounters 2 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G1,2,"庄子 萌、羽谷 沙織、石川 涼子",-,抽選
+春学期,火,@,教養B,全,19-16,1,31067,"Basic Communication Skills ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G1,2,"庄子 萌、羽谷 沙織、石川 涼子",-,抽選
+春学期,水,1-2,教養A,全,26-16,1,34866,企業と社会,G1,2,SCHLUNZE ROLF DIETER,Ｃ３０２,抽選
+春学期,水,1-2,教養A,全,26-16,1,34874,現代の世界経済,G3,2,佐野 聖香,Ｃ３０１,抽選
+春学期,水,1-2,教養D,全,26-16,1,34993,スポーツ方法実習Ⅰ(A)【バスケットボール】,13,1,藤江 隼平,１アリーナ,抽選
+春学期,水,1-2,教養D,全,26-16,1,35001,スポーツ方法実習Ⅰ(C)【卓球】,1,1,櫻木 規美子,２アリーナ,抽選
+春学期,水,1-4,専門,電,24-16,3,32425,電気電子工学実験Ⅲ,C8,2,"川畑 良尚、杉江 隆一、中野 道彦、西門 秀人","EX1 1階 電気電子工学第1応用実験室",本
+春学期,水,3-4,教養A,全,26-16,1,34868,現代日本の政治,G1,2,梶居 佳広,Ｃ３０３,抽選
+春学期,水,3-4,教養B,全,26-16,1,34943,Introduction to Economics,G1,2,黒川 清登,Ｃ１０４,本
+春学期,水,3-4,教養B,全,26-20,1.2のみ,31056,Cross-cultural Encounters 1,G2,2,田村 優,Ｃ５０３,抽選
+春学期,水,3-4,教養B,全,19-16,1,31057,Cross-cultural Encounters,G2,2,田村 優,Ｃ５０３,抽選
+春学期,水,3-4,教養C,全,26-20/19-16,1.2のみ/1,34957,地域参加学習入門,G2,2,高橋 結,Ｃ４０３,抽選
+春学期,水,3-4,教養D,全,26-16,1,35004,スポーツ方法実習Ⅰ(C)【卓球】,4,1,櫻木 規美子,２アリーナ,抽選
+春学期,水,3-4,教養D,全,26-16,1,35005,スポーツ方法実習Ⅰ(C)【エクササイズ】,5,1,樋口 和真,トレ R,抽選
+春学期,水,3-4,教養E,全,26-16,1,17099,"教養ゼミナール ※テーマは、シラバスを確認してください。",13,2,"COULSON DAVID、滝沢 直宏、平田 裕、佐々木 冠、山崎 のぞみ",【衣笠】洋YY501,抽選
+春学期,水,3-4,教養E,全,26-16,1,35055,"教養ゼミナール ※テーマは、シラバスを確認してください。",40,2,西村 直子,Ｃ５０８,抽選
+春学期,水,3-4,教養E,全,26-16,1,54681,"教養ゼミナール ※テーマは、シラバスを確認してください。",58,2,中村 真悟,【OIC】C271,抽選
+春学期,水,3-4,基礎専,全,26-16,1～4のみ,32152,"専門ゼミナール【主体的な海外活動実践の技法】 ※専門ゼミナール【理工系学生のためのすぐに使える英文メールライティング講座】を修得済または【３分で「なるほど！」へ：英語プレゼンテーション設計と実演】を当該科目と同開講時期に履修を希望する学生は、当該科目の受講登録期間終了までに理工学部事務室に来室ください。※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TD,2,浅井 静代,Ｆ１１２,抽選
+春学期,水,3-4,基礎専,電・情,25-19,2,32175,情報社会と倫理,48,2,"藤野 毅、市橋 瑞希",Ｆ１０１,本
+春学期,水,3-4,専門,情,26,1,32176,特殊講義（専門）Ⅰ（情報社会と倫理）,6T,2,"藤野 毅、市橋 瑞希",Ｆ１０１,本
+春学期,水,3-4,専門,情,24-16,3,32496,高周波工学,6T,2,道関 隆国,Ｆ３０４,本
+春学期,水,5-6,教養A,全,26-16,1,34865,経済と社会,TC,2,松本 朗,Ｃ３０１,抽選
+春学期,水,5-6,教養A,全,26-16,1,34872,現代の世界経済,G1,2,李 翔宇,Ｃ４０２,抽選
+春学期,水,5-6,教養B,全,26-20,1,16966,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",1,2,曹 瑞林,【衣笠】諒RY306,抽選
+春学期,水,5-6,教養B,全,19-16,1,16967,"Theme Study ※テーマは、シラバスを確認してください。",1,2,曹 瑞林,【衣笠】諒RY306,抽選
+春学期,水,5-6,教養B,全,26-20,1,31054,Academic Skills 2,G1,2,田村 優,Ａ２０５,抽選
+春学期,水,5-6,教養B,全,19-16,1,31055,Intermediate Academic Skills,G1,2,田村 優,Ａ２０５,抽選
+春学期,水,5-6,教養C,全,26-20,1のみ,34950,社会と学ぶ課題解決,G1,2,中川 洋子,Ｐ１０６,抽選
+春学期,水,5-6,教養E,全,26-16,1,35057,"教養ゼミナール ※テーマは、シラバスを確認してください。",42,2,中村 大,Ａ２１３,抽選
+春学期,水,5-6,教養E,全,26-16,1,35050,"教養ゼミナール ※テーマは、シラバスを確認してください。",35,2,永井 清,Ｃ６０２,抽選
+春学期,水,5-6,教養E,全,26-16,1,35049,"教養ゼミナール ※テーマは、シラバスを確認してください。",34,2,福井 正博,Ｃ６０３,抽選
+春学期,水,5-6,基礎専,情,26-16,1,31809,情報科学Ⅰ,6T,2,藤野 毅,Ｃ４０３,本
+春学期,水,5-6,基礎専,電,26-20,1,31856,数学Ⅰ（微分積分）,A8,2,上野 嘉夫,Ｆ２０４,本
+春学期,水,5-6,基礎専,電,19-16,1,31857,数学Ⅰ,W8,2,上野 嘉夫,Ｆ２０４,本
+春学期,水,5-6,基礎専,電,26-20,1,31904,数学Ⅲ（線形代数）,B8,2,川村 勝紀,Ｆ２０５,本
+春学期,水,5-6,基礎専,電,19-16,1,31905,数学Ⅲ,X8,2,川村 勝紀,Ｆ２０５,本
+春学期,水,5-6,専門,電,24-16,3,32433,固体物性Ⅱ,T8,2,杉江 隆一,Ｆ２０１,本
+春学期,水,5-6,専門,情,24-16,3,32504,コンピュータネットワーク,6T,2,AHMAD A. AMINUDDIN,Ｃ１０８,本
+春学期,水,7-8,立命館/教養A,全,26-20/19-16,1,34801,科学・技術と社会,T,2,馬渕 浩一,Ｃ３０４,抽選
+春学期,水,7-8,教養A,全,26-20/19-16,1/3,34826,宗教と社会,G1,2,中西 尋子,Ｃ２０４,抽選
+春学期,水,7-8,教養A,全,26-16,1,34893,東アジアと朝鮮半島,T,2,浅井 良純,Ｃ３０２,抽選
+春学期,水,7-8,教養B,全,26-16,1,15237,Introduction to Humanities,R,2,AVILES ERNULT J. R.,【衣笠】明MG002,選考
+春学期,水,7-8,教養E,全,26-16,1,17100,"教養ゼミナール ※テーマは、シラバスを確認してください。",14,2,島田 幸司,【衣笠】洋YY203,抽選
+春学期,水,7-8,教養E,全,26-16,1,54680,"教養ゼミナール ※テーマは、シラバスを確認してください。",57,2,田中 力,【OIC】AC242,抽選
+春学期,水,7-8,教養E,全,26-16,1,35046,"教養ゼミナール ※テーマは、シラバスを確認してください。",31,2,黒川 清登,Ａ３０３,抽選
+春学期,水,7-8,基礎専,電,26-16,1,31837,情報処理演習,C8,1,藤枝 一郎,情処演P33,本
+春学期,水,7-8,基礎専,全,26-16,1～4のみ,32155,"専門ゼミナール【建設人としての日本語活用】 ※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TI,2,持田 泰秀,Ｐ１０９,選考
+春学期,水,7-10,専門,電,25-16,2,32402,電気電子工学実験Ⅰ,B8,2,"峯元 高志、中村 彰男、原 知彦、諏訪田 剛","EX1 1階 電気電子工学第1応用実験室",本
+春学期,水,7-8,専門,電,24-16,3,32437,制御工学,T8,2,岡野 訓尚,Ｃ１０８,本
+春学期,水,7-10,専門,情,25-16,2,32486,電子情報工学実験Ⅰ,6T,2,"藤田 智弘、福井 正博、道関 隆国、田中 亜実、白畑 正芳、安田 岳雄、佐保 賢志、川上 善之","ﾛｰﾑ記念館5階大会議室および各実験室(1､14回目はﾛｰﾑで実施)",本
+春学期,水,9-10,教養A,全,26-16,1,34895,ヨーロッパの歴史,T,2,森永 貴子,Ｃ４０２,抽選
+春学期,水,9-10,教養C,全,26-20,1のみ,34951,社会と学ぶ課題解決,G2,2,中川 洋子,Ｐ１０６,抽選
+春学期,水,9-10,教養E,全,26-16,1,17102,"教養ゼミナール ※テーマは、シラバスを確認してください。",16,2,近藤 雪絵,【衣笠】学GJ310,抽選
+春学期,水,9-10,基礎専,全,26-16,1,32039,生物科学１,TA,2,稲津 哲也,Ｃ３０３,本
+春学期,水,9-10,基礎専,全,26-16,1,32042,生物科学２,TA,2,谷浦 秀夫,Ｃ４０１,本
+春学期,水,9-10,自由,電,26-16,1のみ,32195,"物理基礎 ※対象者以外の受講希望者は事務室受付",T8,2,俵口 忠功,Ｆ１０９,事務室
+春学期,水,9-10,専門,電,24-16,3,32441,電磁波工学,T8,2,渡邉 歴,Ｃ３０２,本
+春学期,水,9-10,専門,情,24-16,3,32507,複素関数論,6T,2,村田 学,Ｆ３０４,本
+春学期,水,@,教養A,全,26-20,1,34925,"データエンジニアリング基礎 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G1,2,西門 秀人,-,抽選
+春学期,木,1-2,教養A,全,26-16,1,34837,文学と社会,G1,2,三浦 俊介,Ｃ３０３,抽選
+春学期,木,1-2,教養D,全,26-16,1,34989,スポーツ方法実習Ⅰ(A)【テニス】,9,1,新野 守,テニス C,抽選
+春学期,木,1-2,教養D,全,26-16,1,34998,スポーツ方法実習Ⅰ(B)【バレーボール】,4,1,櫻木 規美子,１アリーナ,抽選
+春学期,木,1-2,教養D,全,26-16,1,35010,スポーツ方法実習Ⅰ(D)【バドミントン】,4,1,岩瀬 雅紀,２アリーナ,抽選
+春学期,木,1-2,教養E,全,26-16,1,17101,"教養ゼミナール ※テーマは、シラバスを確認してください。",15,2,山中 司,【衣笠】学GJ310,抽選
+春学期,木,1-2,基礎専,情,26-20,1,31860,数学Ⅰ（微分積分）,6T,2,結城 郷,Ｆ３０４,本
+春学期,木,1-2,基礎専,情,19-16,1,31861,数学Ⅰ,6X,2,結城 郷,Ｆ３０４,本
+春学期,木,1-4,専門,電,25-16,2,32403,電気電子工学実験Ⅰ,C8,2,"田口 耕造、藤枝 一郎、中村 彰男、繁田 光浩","EX1 1階 電気電子工学第1応用実験室",本
+春学期,木,1-2,専門,情,25-16,2,32482,応用Cプログラミング,6A,2,久保 博嗣,情処演P34,本
+春学期,木,3-4,立命館/教養E,全,26-20/19-16,1.2のみ/2,34781,ピア・サポート論,G3,2,矢野 浩二朗,C801,抽選
+春学期,木,3-4,教養A,全,26-16,1,34921,情報技術と社会,TA,2,島川 博光,Ｃ２０２,抽選
+春学期,木,3-4,教養B,全,26-20,1,31050,Academic Skills 1,G1,2,田村 優,Ａ３０６,抽選
+春学期,木,3-4,教養B,全,19-16,1,31051,Basic Academic Skills,G1,2,田村 優,Ａ３０６,抽選
+春学期,木,3-4,教養D,全,26-16,1,34987,スポーツ方法実習Ⅰ(A)【ソフトボール】,7,1,櫻木 規美子,第１ G,抽選
+春学期,木,3-4,教養D,全,26-16,1,34990,スポーツ方法実習Ⅰ(A)【テニス】,10,1,新野 守,テニス C,抽選
+春学期,木,3-4,教養D,全,26-16,1,35011,スポーツ方法実習Ⅰ(D)【バドミントン】,5,1,岩瀬 雅紀,２アリーナ,抽選
+春学期,木,3-4,教養E,全,26-16,1,35048,"教養ゼミナール ※テーマは、シラバスを確認してください。",33,2,道関 隆国,情語演P24,抽選
+春学期,木,3-4,教養E,全,26-16,1,35054,"教養ゼミナール ※テーマは、シラバスを確認してください。",39,2,谷垣 和則,Ａ３０７,抽選
+春学期,木,3-4,基礎専,"数・物・電・情・機・ロ・建",25-16,2,31803,"環境科学 ※環境都市工学科は受講不可",TA,2,"惣田 訓、澤田 和子、池谷 透、樋口 能士",Ｃ３０１,本
+春学期,木,3-4,基礎専,電,26-16,1,31835,情報処理演習,A8,1,福水 洋平,情処演P31,本
+春学期,木,3-4,基礎専,電,26-16,1,31836,情報処理演習,B8,1,原 知彦,情処演P32,本
+春学期,木,3-4,基礎専,電,26-16,1,31838,情報処理演習,D8,1,沼居 貴陽,情処演P25,本
+春学期,木,3-4,専門,電,24-16,3,32430,電力システム工学,T8,2,柿ヶ野 浩明,Ｃ１０９,本
+春学期,木,3-4,専門,情,26-16,1,32459,電子情報基礎数学,6T,2,藤野 毅,Ｆ３０４,本
+春学期,木,3-4,専門,情,24-16,3,32497,オペレーティングシステム,6T,2,神原 弘之,Ｆ３０６,本
+春学期,木,5-6,教養A,全,26-16,1,34839,現代の教育,E,2,河井 亨,Ｃ３０３,抽選
+春学期,木,5-6,教養A,全,26-16,1,34864,経済と社会,TB,2,松本 朗,Ｃ３０２,抽選
+春学期,木,5-6,教養B,全,26-16,1,34945,Introductory Course to Climate Change and Global Warming,G1,2,稲澤 泉,-,本
+春学期,木,5-6,教養D,全,26-16,1,34991,スポーツ方法実習Ⅰ(A)【ソフトボール】,11,1,舎利弗 学,第１ G,抽選
+春学期,木,5-6,教養D,全,26-16,1,35006,スポーツ方法実習Ⅰ(C)【エクササイズ】,6,1,犬走 渚,トレ R,抽選
+春学期,木,5-6,教養E,全,26-16,1,17098,"教養ゼミナール ※テーマは、シラバスを確認してください。",12,2,戸谷 洋志,【衣笠】存ZS302,抽選
+春学期,木,5-6,教養E,全,26-16,1,35056,"教養ゼミナール ※テーマは、シラバスを確認してください。",41,2,大島 陽,Ａ２０７,抽選
+春学期,木,5-6,基礎専,電,26-20,1,31858,数学Ⅰ（微分積分）,B8,2,原瀬 晋,Ｆ２０４,本
+春学期,木,5-6,基礎専,電,19-16,1,31859,数学Ⅰ,X8,2,原瀬 晋,Ｆ２０４,本
+春学期,木,5-6,基礎専,電,26-20,1,31902,数学Ⅲ（線形代数）,A8,2,池田 憲明,Ｆ２０６,本
+春学期,木,5-6,基礎専,電,19-16,1,31903,数学Ⅲ,W8,2,池田 憲明,Ｆ２０６,本
+春学期,木,5-6,基礎専,全,26-16,1～4のみ,32154,"専門ゼミナール【二次元コードのデザイン演習】 ※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TF,2,道関 隆国,情語演P24,選考
+春学期,木,5-6,専門,電,24-16,3,32428,パワーエレクトロニクスⅠ,T8,2,柿ヶ野 浩明,Ｐ２０１,本
+春学期,木,5-6,専門,情,25-20,2,32477,ハードウェア記述言語,6A,2,冨山 宏之,Ｃ１０６,本
+春学期,木,5-6,専門,情,19-16,2,32478,ハードウェア設計言語,6X,2,冨山 宏之,Ｃ１０６,本
+春学期,木,5-6,専門,情,25-16,2,32483,応用Cプログラミング,6B,2,久保 博嗣,情処演P34,本
+春学期,木,5-6,専門,情,24-16,3,32494,電子回路Ⅱ,6T,2,田中 亜実,Ｃ６０５,本
+春学期,木,7-8,教養A,全,26-20,1,34917,数理の世界,G1,2,大坂 博幸,Ｃ１０２,抽選
+春学期,木,7-8,教養C,全,25-16,2,34955,仕事とキャリア,G1,2,中川 洋子,Ｃ３０６,抽選
+春学期,木,7-8,教養D,全,26-16,1,34966,スポーツの歴史と発展,TA,2,新野 守,Ｃ１０１,抽選
+春学期,木,7-8,教養D,全,26-16,1,34999,スポーツ方法実習Ⅰ(B)【水中運動】,5,1,田中 貴大,ｽﾎﾟｺﾓﾌﾟｰﾙ,抽選
+春学期,木,7-8,教養E,全,26-16,1,17095,"教養ゼミナール ※テーマは、シラバスを確認してください。",9,2,木立 雅朗,【衣笠】学GJ404,抽選
+春学期,木,7-8,教養E,全,26-16,1,17097,"教養ゼミナール ※テーマは、シラバスを確認してください。",11,2,ウエルズ 恵子,【衣笠】敬KG217,抽選
+春学期,木,7-8,教養E,全,26-16,1,54682,"教養ゼミナール ※テーマは、シラバスを確認してください。",59,2,周 緯生,【OIC】AS463,抽選
+春学期,木,7-8,教養E,全,24-20,3,17119,"超領域リベラルアーツ ※テーマは、シラバスを確認してください。",GT,2,"堀江 未来、羽谷 沙織",【OIC】AN327,抽選
+春学期,木,7-8,基礎専,全,26-16,1,31802,化学２,TC,2,松本 健太,Ｃ２０１,本
+春学期,木,7-8,基礎専,電,26-20,1,31820,情報処理,A8,2,福水 洋平,Ｆ３０５,本
+春学期,木,7-8,基礎専,電,19-16,1,31821,"情報科学Ⅰ ※2019年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",X8,2,福水 洋平,Ｆ３０５,本
+春学期,木,7-8,基礎専,電,26-20,1,31822,情報処理,B8,2,沼居 貴陽,Ｆ３０６,本
+春学期,木,7-8,基礎専,電,19-16,1,31823,"情報科学Ⅰ ※2019年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",Y8,2,沼居 貴陽,Ｆ３０６,本
+春学期,木,7-8,専門,電,25-16,2,32400,確率統計,T8,2,久保 幸弘,Ｃ１０８,本
+春学期,木,7-10,専門,電,24-16,3,32424,電気電子工学実験Ⅲ,B8,2,"毛利 真一郎、鷹羽 浄嗣、垣本 隆司、中野 道彦","EX1 1階 電気電子工学第1応用実験室",本
+春学期,木,7-8,専門,情,25-20,2,32479,ハードウェア記述言語,6B,2,冨山 宏之,Ｃ１０６,本
+春学期,木,7-8,専門,情,19-16,2,32480,ハードウェア設計言語,6Y,2,冨山 宏之,Ｃ１０６,本
+春学期,木,7-10,専門,情,24-16,3,32508,電子情報工学実験Ⅲ,6T,2,"孟 林、神原 弘之、馬杉 正男、白畑 正芳、久保 博嗣、寺澤 真一、LI QI、三木 信彦","1、14回目はﾛｰﾑ記念館5階大会議室（それ以外はmoodle+Rのコースで確認すること）",本
+春学期,木,9-10,教養B,全,26-20,1,34931,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",5,2,近藤 雪絵,Ｒ３１２,抽選
+春学期,木,9-10,教養B,全,19-16,1,34932,"Theme Study ※テーマは、シラバスを確認してください。",5,2,近藤 雪絵,Ｒ３１２,抽選
+春学期,木,9-10,教養B,全,26-16,1,15258,Introduction to the United Nations,RA,2,石川 幸子,【衣笠】恒KS209,選考
+春学期,木,9-10,教養C,全,26-20/19-16,1.2のみ/1,34954,学びとキャリア,G1,2,原 瑞穂,Ｃ２０５,抽選
+春学期,木,9-10,教養E,全,26-16,1,35052,"教養ゼミナール ※テーマは、シラバスを確認してください。",37,2,梶本 哲也,Ｃ５０６,抽選
+春学期,木,9-10,教養E,全,26-16,1,54679,"教養ゼミナール ※テーマは、シラバスを確認してください。",56,2,永島 正康,【OIC】C371,抽選
+春学期,木,9-10,基礎専,全,26-16,1,31798,化学１,TB,2,未定,Ｃ３０１,本
+春学期,木,9-10,基礎専,全,26-16,1,32045,宇宙地球科学１,TA,2,吉田 晶樹,Ｃ３０２,抽選
+春学期,木,9-10,専門,電,25-20,2,32445,光学Ⅰ,A8,2,藤枝 一郎,Ｆ２０５,本
+春学期,木,9-10,専門,電,19-16,3,32446,波動光学,X8,2,藤枝 一郎,Ｆ２０５,本
+春学期,木,9-10,専門,情,25-16,2,32472,"電磁気学Ⅰ ※2025年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",6B,2,佐保 賢志,Ｃ１０９,本
+春学期,金,1-2,教養A,全,26-16,1,34875,現代の経営,T,2,RAUPACH SUMIYA JOERG,Ｃ２０２,抽選
+春学期,金,1-2,教養D,全,26-16,1,34986,スポーツ方法実習Ⅰ(A)【テニス】,6,1,新野 守,テニス C,抽選
+春学期,金,1-2,教養D,全,26-16,1,34992,スポーツ方法実習Ⅰ(A)【バスケットボール】,12,1,櫻木 規美子,１アリーナ,抽選
+春学期,金,1-2,教養D,全,26-16,1,34995,スポーツ方法実習Ⅰ(B)【サッカー】,1,1,道羅 絢斗,第１ G,抽選
+春学期,金,1-2,基礎専,全,26-16,1,32047,宇宙地球科学１,TB,2,吉田 晶樹,Ｃ３０１,抽選
+春学期,金,1-2,専門,情,24-16,3,32491,コンパイラ,6T,2,泉 知論,Ｆ３０１,本
+春学期,金,3-4,教養A,全,26-20,1,34855,映像メディア実践入門,G1,2,辻野 理花,Ｃ６０７,抽選
+春学期,金,3-4,教養A,全,19-16,1,34856,特殊講義（映像メディア実践入門）,G1,2,辻野 理花,Ｃ６０７,抽選
+春学期,金,3-4,教養A,全,26-16,1,34870,現代日本の政治,G3,2,梶居 佳広,Ｃ４０１,抽選
+春学期,金,3-4,教養B,全,26-20,1,34927,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",3,2,山中 司,Ｒ２０２,抽選
+春学期,金,3-4,教養B,全,19-16,1,34928,"Theme Study ※テーマは、シラバスを確認してください。",3,2,山中 司,Ｒ２０２,抽選
+春学期,金,3-4,教養D,全,26-16,1,34985,スポーツ方法実習Ⅰ(A)【テニス】,5,1,櫻木 規美子,テニス C,抽選
+春学期,金,3-4,教養D,全,26-16,1,34996,スポーツ方法実習Ⅰ(B)【サッカー】,2,1,道羅 絢斗,第１ G,抽選
+春学期,金,3-4,教養D,全,26-16,1,34997,スポーツ方法実習Ⅰ(B)【バレーボール】,3,1,新野 守,１アリーナ,抽選
+春学期,金,3-4,基礎専,電,26-20,1,32066,力学入門,A8,2,大坂 寿之,Ｆ２０６,本
+春学期,金,3-4,基礎専,電,19-16,1,32067,物理科学１,X8,2,大坂 寿之,Ｆ２０６,本
+春学期,金,3-4,基礎専,電,26-20,1,32068,力学入門,B8,2,濱地 賢太郎,Ｆ２０５,本
+春学期,金,3-4,基礎専,電,19-16,1,32069,物理科学１,Y8,2,濱地 賢太郎,Ｆ２０５,本
+春学期,金,3-4,基礎専,数・電・情・機・ロ・建/環都,19-16/21-18,1,32102,"物理科学２ ※物理科学科は受講不可",X,2,俵口 忠功,Ｆ１１２,本
+春学期,金,3-4,専門,電,24-16,3,32436,信号処理,T8,2,鷹羽 浄嗣,Ｆ２０３,本
+春学期,金,3-4,専門,情,25-16,2,32484,ベクトル解析,6T,2,藤田 智弘,Ｃ３０２,本
+春学期,金,3-4,専門,情,19-16,4,32511,電子回路設計,6X,2,大倉 俊介,ﾛｰﾑ記念館2階集積ﾃﾞｻﾞｲﾝﾙｰﾑ,本
+春学期,金,5-6,立命館/教養E,全,26-20/19-16,1.2のみ/2,34780,ピア・サポート論,G2,2,藤本 学,Ｃ６０７,抽選
+春学期,金,5-6,教養A,全,26-20,1.2のみ,16878,"国の行政組織 ※21年度以前入学者の環境都市工学科は受講不可。",GA,2,紀國 洋,Ｃ１０７,抽選
+春学期,金,5-6,教養E,全,19-16,1.2のみ,16881,"特殊講義（教養Ｅ）Ⅰ（国の行政組織） ※環境都市工学科は受講不可",GA,2,紀國 洋,Ｃ１０７,抽選
+春学期,金,5-6,教養A,全,19-16,1,34910,科学と技術の歴史,G1,2,柴田 喜悠,Ｃ３０４,抽選
+春学期,金,5-6,教養D,全,26-16,1,35008,スポーツ方法実習Ⅰ(D)【バドミントン】,2,1,北川 芙南,２アリーナ,抽選
+春学期,金,5-6,自由,電,26-16,1のみ,32184,"数学基礎 ※対象者以外の受講希望者は事務室受付",T8,2,村田 学,Ｆ１０１,事務室
+春学期,金,5-6,専門,電,24-16,3,32442,計算機ソフトウェア,T8,2,宇野 重康,Ｆ３０５,本
+春学期,金,7-8,立命館/教養E,全,26-20/19-16,1.2のみ/2,34779,ピア・サポート論,G1,2,藤本 学,Ｃ６０７,抽選
+春学期,金,7-8,教養A,全,26-16,1,34835,文化人類学入門,G2,2,岩谷 洋史,Ｃ３０１,抽選
+春学期,金,7-8,教養A,全,19-16,1,34911,科学と技術の歴史,G2,2,柴田 喜悠,Ｃ３０４,抽選
+春学期,金,7-8,教養B,全,26-16,1,34947,Understanding Visual Culture,G1,2,永田 彰子,Ｃ１０４,本
+春学期,金,7-8,教養D,全,26-16,1,34970,スポーツと現代社会,T,2,新野 守,Ｃ１０１,抽選
+春学期,金,7-8,教養E,全,26-16,1,17092,"教養ゼミナール ※テーマは、シラバスを確認してください。",6,2,景井 充,【衣笠】以IG307,抽選
+春学期,金,7-8,基礎専,情,26-20,1,32070,力学入門,6T,2,篠原 忠臣,Ｆ３０６,本
+春学期,金,7-8,基礎専,情,19-16,1,32071,物理科学１,6X,2,篠原 忠臣,Ｆ３０６,本
+春学期,金,7-8,専門,電,24-16,3,32434,半導体工学,A8,2,荒木 努,Ｆ２０４,本
+春学期,金,7-8,専門,電,24-16,3,32435,半導体工学,B8,2,今井 茂,Ｆ２０６,本
+春学期,金,7-8,専門,情,25-16,2,32490,微分方程式／ラプラス変換,6T,2,村田 学,Ｐ２０１,本
+春学期,金,9-10,教養A,全,26-16,1,34836,文化人類学入門,G3,2,岩谷 洋史,Ｃ２０２,抽選
+春学期,金,9-10,基礎専,数・物・情・機・ロ・環・建/全,25-20/19-16,2,31815,情報科学Ⅲ,TA,2,稲葉 宏幸,Ｃ４０２,本
+春学期,金,9-10,基礎専,電,19-16,1,32107,物理科学３,X8,2,濱地 賢太郎,Ｆ１１０,本
+秋学期,月,1-2,教養A,全,26-16,1,34890,中国の国家と社会,G2,2,松本 保宣,Ｃ４０２,抽選
+秋学期,月,1-2,教養E,全,24-20,3,17123,"超領域リベラルアーツ ※テーマは、シラバスを確認してください。",GR,2,"山末 英嗣、光斎 翔貴",-,抽選
+秋学期,月,1-2,基礎専,全,26-16,1,31801,化学２,TB,2,中谷 仁,Ｃ３０２,本
+秋学期,月,1-2,専門,電,26-16,1,32372,電磁気学Ⅰ,T8,2,沼居 貴陽,Ｃ１０９,本
+秋学期,月,1-4,専門,電,25-16,1,32387,電気電子工学基礎実験,X8,2,"川畑 良尚、田口 耕造",情処演P31,本
+秋学期,月,1-2,専門,電,24-16,3,32449,光通信工学,T8,2,瀧口 浩一,Ｆ２０６,本
+秋学期,月,3-4,教養B,全,26-20,1,34941,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",10,2,大島 陽,【OIC】AN427,抽選
+秋学期,月,3-4,教養B,全,19-16,1,34942,"Theme Study ※テーマは、シラバスを確認してください。",10,2,大島 陽,【OIC】AN427,抽選
+秋学期,月,3-4,教養B,全,26-16,1,54620,Computers in Education,GV,2,CONDON BARRY,【OIC】H341,抽選
+秋学期,月,3-4,教養B,全,26-20,1,31062,Academic Skills 1,G2,2,田村 優,Ａ２０４,抽選
+秋学期,月,3-4,教養B,全,19-16,1,31063,Basic Academic Skills,G2,2,田村 優,Ａ２０４,抽選
+秋学期,月,3-4,教養D,全,26-16,1,35025,スポーツ方法実習Ⅱ(B)【バレーボール】,1,1,犬走 渚,１アリーナ,抽選
+秋学期,月,3-4,教養D,全,26-16,1,35039,スポーツ方法実習Ⅱ(D)【バドミントン】,3,1,渡邊 雅也,２アリーナ,抽選
+秋学期,月,3-4,専門,電,25-16,2,32397,固体物性Ⅰ,T8,2,沼居 貴陽,Ｃ１０９,本
+秋学期,月,3-4,専門,電,24-16,3,32431,回路設計CAD,T8,2,柿ヶ野 浩明,Ｆ２０１,本
+秋学期,月,3-4,専門,電,23-16,4,32457,情報通信法規,T8,2,野坂 秀之,Ｃ６０５,本
+秋学期,月,3-4,専門,情,26-20,1,32461,論理回路,6T,2,福井 正博,Ｃ１０７,本
+秋学期,月,3-4,専門,情,19-16,1,32462,論理回路Ⅰ,6X,2,福井 正博,Ｃ１０７,本
+秋学期,月,3-4,専門,情,25-20,2,32498,コンピュータアーキテクチャⅡ,6T,2,孟 林,Ｆ３０６,本
+秋学期,月,3-4,専門,情,19-16,3,32499,コンピュータアーキテクチャⅡ,6X,2,孟 林,Ｆ３０６,本
+秋学期,月,3-4,専門,情,24-20,3,32514,並列処理,6T,2,冨山 宏之,Ｐ２０１,本
+秋学期,月,3-4,専門,情,19-16,4,32515,並列処理システム,6X,2,冨山 宏之,Ｐ２０１,本
+秋学期,月,5-6,教養D,全,26-16,1,35037,スポーツ方法実習Ⅱ(D)【バドミントン】,1,1,渡邊 雅也,２アリーナ,抽選
+秋学期,月,5-6,教養E,全,26-16,1,54689,"教養ゼミナール ※テーマは、シラバスを確認してください。",66,2,野澤 健,【OIC】H241,抽選
+秋学期,月,5-6,基礎専,電,26-20,1,31879,数学Ⅱ（微分積分）,A8,2,北沢 孝司,Ｆ２０５,本
+秋学期,月,5-6,基礎専,電,19-16,1,31880,数学Ⅱ,W8,2,北沢 孝司,Ｆ２０５,本
+秋学期,月,5-6,基礎専,電,26-20,1,31881,数学Ⅱ（微分積分）,B8,2,吉永 崇志,Ｆ２０６,本
+秋学期,月,5-6,基礎専,電,19-16,1,31882,数学Ⅱ,X8,2,吉永 崇志,Ｆ２０６,本
+秋学期,月,5-6,基礎専,全,26-16,1,32051,宇宙地球科学２,TA,2,土井 一生,Ｃ３０２,本
+秋学期,月,5-6,専門,電,25-16,2,32398,量子力学,T8,2,毛利 真一郎,Ｃ３０６,本
+秋学期,月,5-6,専門,電,24-16,3,32421,電子回路演習,B8,1,佐野 明秀,Ｆ１１０,本
+秋学期,月,7-8,教養A,全,26-16,1,34821,論理と思考,G1,2,大西 琢朗,Ｃ３０１,抽選
+秋学期,月,7-8,教養A,全,26-20,1,34898,アメリカの社会と文化,T,2,水谷 憲一,Ｃ３０４,抽選
+秋学期,月,7-8,教養A,全,19-16,1,34899,アメリカの歴史,T,2,水谷 憲一,Ｃ３０４,抽選
+秋学期,月,7-8,教養B,全,26-20,1,34937,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",8,2,野澤 健,【OIC】H241,抽選
+秋学期,月,7-8,教養B,全,19-16,1,34938,"Theme Study ※テーマは、シラバスを確認してください。",8,2,野澤 健,【OIC】H241,抽選
+秋学期,月,7-8,教養B,全,26-20,1,31070,"Cross-cultural Studies ※テーマは、シラバスを確認してください。",G1,2,羽谷 沙織,Ａ２０３,本
+秋学期,月,7-8,教養D,全,26-16,1,35024,スポーツ方法実習Ⅱ(A)【ヨガ】,12,1,佐久間 新,ｽﾎﾟｺﾓ多目的,抽選
+秋学期,月,7-8,教養E,全,26-16,1,35059,"教養ゼミナール ※テーマは、シラバスを確認してください。",44,2,西澤 幹雄,Ｃ５１０,抽選
+秋学期,月,7-8,教養E,全,26-16,1,17114,"教養ゼミナール ※テーマは、シラバスを確認してください。",28,2,永井 清,【衣笠】敬KG212,抽選
+秋学期,月,7-8,基礎専,全,26-16,1,32052,宇宙地球科学２,TB,2,土井 一生,Ｃ３０２,本
+秋学期,月,7-8,専門,電,26-16,1,32383,電気電子工学概論,A8,2,"毛利 真一郎、峯元 高志、田口 耕造、久保 幸弘",Ｆ１０１,事務室
+秋学期,月,7-8,専門,電,26-16,1,32384,電気電子工学概論,B8,2,"佐野 明秀、宇野 重康、藤井 茉美",Ｆ１０２,事務室
+秋学期,月,7-8,専門,電,26-16,1,32385,電気電子工学概論,C8,2,"岡野 訓尚、柿ヶ野 浩明、久保 幸弘",Ｆ１０７,事務室
+秋学期,月,7-8,専門,電,26-16,1,32386,電気電子工学概論,D8,2,"野坂 秀之、福水 洋平、瀧口 浩一",Ｆ１０８,事務室
+秋学期,月,7-8,専門,電,25-20,2,32413,光学Ⅱ,T8,2,渡邉 歴,Ｃ４０３,本
+秋学期,月,7-8,専門,電,19-16,2,32414,幾何光学,X8,2,渡邉 歴,Ｃ４０３,本
+秋学期,月,7-8,専門,情,26,1,32471,"電磁気学Ⅰ ※2026年度以降入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",6A,2,佐保 賢志,Ｃ１０８,本
+秋学期,月,9-10,立命館/教養A,全,26-20/19-16,1.2のみ,34778,日本の近現代と立命館,G1,2,"松本 朗、仲谷 善雄、君島 東彦、奈良 勝司、篠田 剛、岡本 直輝、金丸 裕一、小関 素明、小沢 道紀",Ｃ２０４,本
+秋学期,月,9-10,教養A,全,26-16,1,34901,イスラーム世界の多様性,T,2,仁子 寿晴,Ｃ３０１,抽選
+秋学期,月,9-10,教養B,全,26-16,1,15295,Introduction to Gender Studies,RB,2,KIM VIKTORIYA,【衣笠】明MG002,選考
+秋学期,月,9-10,基礎専,全,26-16,1,31799,化学１,TC,2,大岡 宏造,Ｃ４０２,本
+秋学期,月,9-10,基礎専,数・物・情・機・ロ・環・建/全,25-20/19-16,2,31816,情報科学Ⅲ,TB,2,稲葉 宏幸,Ｃ４０３,本
+秋学期,月,9-10,基礎専,全,26-16,1,32044,生物科学２,TC,2,"末吉 正尚、池上 真木彦",Ｃ３０５,本
+秋学期,月,9-10,専門,電,24-16,3,32426,電気電子工学応用演習,T8,1,"毛利 真一郎、峯元 高志、福水 洋平、宇野 重康、鷹羽 浄嗣、瀧口 浩一、柿ヶ野 浩明、渡邉 歴、佐野 明秀、野坂 秀之、岡野 訓尚、藤井 茉美、中野 道彦、田口 耕造、川畑 良尚、荒木 努、久保 幸弘",Ｃ２０５,本
+秋学期,月,9-10,専門,情,24-16,3,32509,電子情報工学応用演習,6T,1,"大倉 俊介、藤田 智弘、泉 知論、田中 亜実、馬杉 正男、冨山 宏之、熊木 武志、孟 林、佐保 賢志、中山 良平、LI QI、三木 信彦、AHMAD A. AMINUDDIN",Ｃ３０２,本
+秋学期,月,11-12,基礎専,電,25-19,1,32168,"工業技術概論 ※このクラスは電気電子工学科の学生が対象。以外の学生の登録があった場合は、事務室で削除します。",X8,2,"川畑 良尚、野阪 克義、馬杉 正男、宗本 晋作、加古川 篤、本間 睦朗、青木 和雄、市木 敦之、大上 芳文、樋口 能士、WELLS JOHN CRAIG、久保 幸弘",Ｆ１０７,本
+秋学期,月,11-12,基礎専,情,25-19,1,32169,"工業技術概論 ※このクラスは電子情報工学科の学生が対象。以外の学生の登録があった場合は、事務室で削除します。",6X,2,"馬杉 正男、野阪 克義、宗本 晋作、加古川 篤、本間 睦朗、青木 和雄、市木 敦之、大上 芳文、樋口 能士、川畑 良尚、WELLS JOHN CRAIG、久保 幸弘",Ｆ１０８,本
+秋学期,月,@,教養A,全,26-20,1,34924,"データサイエンス・AI基礎 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G2,2,西門 秀人,-,抽選
+秋学期,火,1-2,立命館/教養E,全,26-20/19-16,1.2のみ/2,34782,ピア・サポート論,G4,2,沖 裕貴,C801,抽選
+秋学期,火,1-2,教養D,全,26-16,1,35013,スポーツ方法実習Ⅱ(A)【テニス】,1,1,村上 嘉野,テニス C,抽選
+秋学期,火,1-2,教養D,全,26-16,1,35032,スポーツ方法実習Ⅱ(C)【卓球】,2,1,岩瀬 雅紀,２アリーナ,抽選
+秋学期,火,1-2,基礎専,全,26-16,1,32041,生物科学１,TC,2,高田 達之,Ｃ４０３,本
+秋学期,火,1-4,専門,電,25-16,2,32404,電気電子工学実験Ⅱ,A8,2,"杉江 隆一、中村 彰男、中野 道彦、諏訪田 剛","EX1 1階 電気電子工学第1応用実験室",本
+秋学期,火,3-4,立命館/教養A,全,26-20/19-16,1,34794,日本国憲法,G3,2,上出 浩,Ｃ１０１,抽選
+秋学期,火,3-4,教養A,全,26-16,1,34813,哲学と人間,TB,2,福井 雅美,Ｃ３０２,抽選
+秋学期,火,3-4,教養B,全,26-20,1,34935,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",7,2,青木 幸子,Ａ４１１,抽選
+秋学期,火,3-4,教養B,全,19-16,1,34936,"Theme Study ※テーマは、シラバスを確認してください。",7,2,青木 幸子,Ａ４１１,抽選
+秋学期,火,3-4,教養C,全,26-20/19-16,1.2のみ/1,34958,地域参加学習入門,G3,2,蔵田 翔,Ｃ４０１,抽選
+秋学期,火,3-4,教養D,全,26-16,1,35017,スポーツ方法実習Ⅱ(A)【テニス】,5,1,村上 嘉野,テニス C,抽選
+秋学期,火,3-4,教養D,全,26-16,1,35028,スポーツ方法実習Ⅱ(B)【サッカー】,4,1,渡邊 雅也,第１ G,抽選
+秋学期,火,3-4,教養E,全,26-16,1,17107,"教養ゼミナール ※テーマは、シラバスを確認してください。",21,2,日暮 雅夫,【衣笠】以IG310,抽選
+秋学期,火,3-4,教養E,全,26-16,1,17106,"教養ゼミナール ※テーマは、シラバスを確認してください。",20,2,増田 幸子,【衣笠】以IG306,抽選
+秋学期,火,3-4,教養E,全,26-16,1,35058,"教養ゼミナール ※テーマは、シラバスを確認してください。",43,2,宮本 十至子,Ａ３１３,抽選
+秋学期,火,3-4,基礎専,情,26-20,1,32096,振動波動入門,6T,2,大坂 寿之,Ｆ２０３,本
+秋学期,火,3-4,専門,電,25-16,1,32371,電気回路演習,X8,1,原 知彦,Ｆ２０６,本
+秋学期,火,3-4,専門,電,23-16,4,32456,計測工学,T8,2,田口 耕造,Ｆ３０１,本
+秋学期,火,3-4,専門,情,25-16,2,32474,集積デバイス工学,6T,2,藤野 毅,Ｃ３０５,本
+秋学期,火,5-6,立命館/教養A,全,26-20/19-16,1,34795,日本国憲法,G4,2,上出 浩,Ｃ１０１,抽選
+秋学期,火,5-6,教養A,全,26-16,1,34834,文化人類学入門,G1,2,韓 敏,Ｃ３０３,抽選
+秋学期,火,5-6,教養A,全,26-16,1,34863,経済と社会,TA,2,松本 朗,Ｃ３０２,抽選
+秋学期,火,5-6,教養B,全,26-20,1,54614,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",2,2,中村 彰憲,【立命館松竹スタジオ】松RS201,抽選
+秋学期,火,5-6,教養B,全,19-16,1,54615,"Theme Study ※テーマは、シラバスを確認してください。",2,2,中村 彰憲,【立命館松竹スタジオ】松RS201,抽選
+秋学期,火,5-6,教養C,全,26-16,1,34961,現代社会のフィールドワーク,G1,2,高橋 結,C801,抽選
+秋学期,火,5-6,教養C,全,26-20,1のみ,34953,社会と学ぶ課題解決,G4,2,原 瑞穂,Ｒ２０２,抽選
+秋学期,火,5-6,教養D,全,26-16,1,34975,スポーツのサイエンス,G3,2,岡松 秀房,Ｃ２０２,抽選
+秋学期,火,5-6,教養D,全,26-16,1,35026,スポーツ方法実習Ⅱ(B)【サッカー】,2,1,渡邊 雅也,第１ G,抽選
+秋学期,火,5-6,教養D,全,26-16,1,35034,スポーツ方法実習Ⅱ(C)【卓球】,4,1,岩瀬 雅紀,２アリーナ,抽選
+秋学期,火,5-6,基礎専,全,26-16,1,32049,宇宙地球科学１,TC,2,一本 潔,Ｃ３０５,本
+秋学期,火,5-6,基礎専,情,19-16,1,32144,特殊講義（基礎専門）Ⅱ（物理学演習）,6X,1,俵口 忠功,Ｆ１１１,本
+秋学期,火,5-6,専門,電,26-16,1,32377,微分方程式,A8,2,岡野 訓尚,Ｆ２０６,本
+秋学期,火,5-6,専門,電,26-16,1,32378,微分方程式,B8,2,難波 巧,Ｆ３０１,本
+秋学期,火,5-6,専門,電,25-16,2,32408,計算機アーキテクチャ,T8,2,福水 洋平,Ｃ２０５,本
+秋学期,火,5-6,専門,電,24-16,3,32422,電子回路演習,C8,1,宇野 重康,Ｆ１１２,本
+秋学期,火,5-6,専門,情,19-16,2,32475,論理回路Ⅱ,6X,2,田中 亜実,Ｆ１１０,本
+秋学期,火,5-6,専門,情,24-20,3,32516,ＡＩ・機械学習,6T,2,中山 良平,情処演C22,本
+秋学期,火,7-8,立命館/教養A,全,26-20/19-16,1,34796,日本国憲法,G5,2,上出 浩,Ｃ１０１,抽選
+秋学期,火,7-8,立命館,全,26-20,1,34804,現代平和論,G2,2,"中野 克彦、伊藤 恵子",Ｃ４０２,抽選
+秋学期,火,7-8,教養A,全,19-16,1,34805,平和学入門,G2,2,"中野 克彦、伊藤 恵子",Ｃ４０２,抽選
+秋学期,火,7-8,教養B,全,26-20,1,34939,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",9,2,西澤 幹雄,【OIC】AN427,抽選
+秋学期,火,7-8,教養B,全,19-16,1,34940,"Theme Study ※テーマは、シラバスを確認してください。",9,2,西澤 幹雄,【OIC】AN427,抽選
+秋学期,火,7-8,教養C,全,26-20,1のみ,34952,社会と学ぶ課題解決,G3,2,奥貫 麻紀,Ｒ２０２,抽選
+秋学期,火,7-8,基礎専,電,26-20,1,31808,"情報科学Ⅰ ※2020年度以降入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",T8,2,福水 洋平,Ｃ２０１,本
+秋学期,火,7-8,基礎専,情,26-20,1,31883,数学Ⅱ（微分積分）,6T,2,川村 勝紀,Ｆ３０５,本
+秋学期,火,7-8,基礎専,情,19-16,1,31884,数学Ⅱ,6X,2,川村 勝紀,Ｆ３０５,本
+秋学期,火,7-8,基礎専,全,26-16,1,32050,宇宙地球科学１,TD,2,一本 潔,Ｃ３０５,本
+秋学期,火,7-8,基礎専,全,26-16,1,32125,特殊講義（基礎専門）Ⅰ（技術者のキャリア）,TA,2,道関 隆国,Ｐ２０１,抽選
+秋学期,火,7-8,専門,電,24-16,3,32450,光エレクトロニクス,T8,2,瀧口 浩一,Ｆ２０６,本
+秋学期,火,7-8,専門,情,25-20,2,32492,"電磁気学Ⅱ ※2020年度以降入学者が対象。以外の学生の登録があった場合は、事務室で受講登録を削除します。",6T,2,馬杉 正男,Ｃ２０２,本
+秋学期,火,7-8,専門,情,19-16,3,32493,"電磁気学Ⅱ ※2019年度以前入学者が対象。以外の学生の登録があった場合は、事務室で削除します。",6X,2,馬杉 正男,Ｃ２０２,本
+秋学期,火,9-10,教養A,全,26-16,1,34825,科学技術と倫理,TB,2,平尾 昌宏,Ｃ３０５,抽選
+秋学期,火,9-10,教養B,全,26-16,1,15270,Introduction to Peace Studies,RB,2,シン ヒョンオ,【衣笠】明MG002,選考
+秋学期,火,9-10,教養C,全,25-20,2,34962,シチズンシップ・スタディーズ,G1,2,高橋 結,Ｃ５０３,選考
+秋学期,火,9-10,教養C,全,19-16,1,34963,シチズンシップ・スタディーズⅠ,G1,2,高橋 結,Ｃ５０３,選考
+秋学期,火,9-10,教養C,全,25-20,2,16993,コーオプ演習（実践）,G1,2,長田 尚子,Ｒ２０１,選考
+秋学期,火,9-10,教養C,全,19-16,3,16994,コーオプ演習,G1,2,長田 尚子,Ｒ２０１,選考
+秋学期,火,9-10,基礎専,全,26-16,1,31800,化学２,TA,2,佐々木 真一,Ｃ３０２,本
+秋学期,火,9-10,基礎専,全,26-16,1,32054,宇宙地球科学２,TD,2,玉井 雅人,Ｃ４０２,本
+秋学期,火,@,教養B,全,26-20,1,31060,"Cross-cultural Encounters 2 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G2,2,"庄子 萌、羽谷 沙織、石川 涼子",-,抽選
+秋学期,火,@,教養B,全,19-16,1,31061,"Basic Communication Skills ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G2,2,"庄子 萌、羽谷 沙織、石川 涼子",-,抽選
+秋学期,水,1-2,教養A,全,26-16,1,34867,企業と社会,G2,2,SCHLUNZE ROLF DIETER,Ｃ４０２,抽選
+秋学期,水,1-2,教養D,全,26-16,1,35015,スポーツ方法実習Ⅱ(A)【バスケットボール】,3,1,櫻木 規美子,１アリーナ,抽選
+秋学期,水,1-2,教養D,全,26-16,1,35040,スポーツ方法実習Ⅱ(D)【バドミントン】,4,1,岩瀬 雅紀,２アリーナ,抽選
+秋学期,水,1-2,教養E,全,26-16,1,17111,"教養ゼミナール ※テーマは、シラバスを確認してください。",25,2,中村 大,【衣笠】洋YY401,抽選
+秋学期,水,1-2,教養E,全,26-16,1,35061,"教養ゼミナール ※テーマは、シラバスを確認してください。",46,2,山中 司,Ｃ５１０,抽選
+秋学期,水,1-2,専門,電,26-16,1,32375,ベクトル解析,A8,2,藤井 茉美,Ｆ３０６,本
+秋学期,水,3-4,教養A,全,26-16,1,34845,世界と日本の食文化,T,2,南 直人,Ｃ３０１,抽選
+秋学期,水,3-4,教養A,全,26-16,1,34869,現代日本の政治,G2,2,梶居 佳広,Ｃ３０２,抽選
+秋学期,水,3-4,教養A,全,26-16,1,34878,社会と福祉,TA,2,川上 潤,Ｃ１０２,抽選
+秋学期,水,3-4,教養B,全,26-16,1,34949,Introduction to Food Culture,G1,2,YOTOVA MARIA IVANOVA,Ｃ１０６,抽選
+秋学期,水,3-4,教養B,全,26-20,1.2のみ,31068,Cross-cultural Encounters 1,G3,2,田村 優,Ｃ６０４,抽選
+秋学期,水,3-4,教養B,全,19-16,1,31069,Cross-cultural Encounters,G3,2,田村 優,Ｃ６０４,抽選
+秋学期,水,3-4,教養D,全,26-16,1,35019,スポーツ方法実習Ⅱ(A)【バスケットボール】,7,1,櫻木 規美子,１アリーナ,抽選
+秋学期,水,3-4,教養D,全,26-16,1,35038,スポーツ方法実習Ⅱ(D)【バドミントン】,2,1,岩瀬 雅紀,２アリーナ,抽選
+秋学期,水,3-4,教養E,全,26-16,1,17105,"教養ゼミナール ※テーマは、シラバスを確認してください。",19,2,柳澤 伸司,【衣笠】以IG207,抽選
+秋学期,水,3-4,専門,電,26-16,1,32376,ベクトル解析,B8,2,藤井 茉美,Ｆ３０６,本
+秋学期,水,3-4,専門,電,25-16,2,32407,数値解析論,T8,2,毛利 真一郎,Ｃ３０５,本
+秋学期,水,3-4,専門,情,26-16,2,32469,電子回路Ⅰ,6T,2,白畑 正芳,Ｃ２０２,本
+秋学期,水,5-6,教養A,全,26-16,1,34819,心理学入門,TB,2,服部 郁子,Ｃ３０１,抽選
+秋学期,水,5-6,教養A,全,26-16,1,34889,中国の国家と社会,G1,2,大平 浩史,Ｃ３０３,抽選
+秋学期,水,5-6,教養B,全,26-16,1,34944,Introduction to Economics,G2,2,MASWANA JEAN-CLAUDE,Ｒ２０１,本
+秋学期,水,5-6,教養D,全,26-16,1,35029,スポーツ方法実習Ⅱ(B)【バレーボール】,5,1,櫻木 規美子,１アリーナ,抽選
+秋学期,水,5-6,教養E,全,26-16,1,17093,"教養ゼミナール ※テーマは、シラバスを確認してください。",7,2,君島 東彦,【衣笠】諒RY209,抽選
+秋学期,水,5-6,教養E,全,26-16,1,17108,"教養ゼミナール ※テーマは、シラバスを確認してください。",22,2,木立 雅朗,【衣笠】清SE004,抽選
+秋学期,水,5-6,教養E,全,26-16,1,35063,"教養ゼミナール ※テーマは、シラバスを確認してください。",48,2,細木 るみこ,Ｃ５０９,抽選
+秋学期,水,5-6,基礎専,数・物・電・情・機・ロ・建,25-16,2,31805,"環境科学 ※環境都市工学科は受講不可",TC,2,竹内 剛,Ｃ４０２,本
+秋学期,水,5-6,基礎専,情,26-16,1,31839,情報処理演習,6A,1,LI QI,情処演P32,本
+秋学期,水,5-6,基礎専,情,26-16,1,31840,情報処理演習,6B,1,AHMAD A. AMINUDDIN,情処演P34,本
+秋学期,水,5-6,基礎専,情,26-16,1,31841,情報処理演習,6C,1,久保 博嗣,情処演P33,本
+秋学期,水,5-6,専門,電,25-16,2,32390,電子回路Ⅰ,B8,2,佐野 明秀,Ｆ２０４,本
+秋学期,水,5-6,専門,電,24-16,3,32440,現代制御論,T8,2,鷹羽 浄嗣,Ｆ３０３,本
+秋学期,水,5-6,専門,情,25-16,2,32485,フーリエ解析,6T,2,道関 隆国,Ｃ１０２,本
+秋学期,水,5-6,専門,情,24-20,3,32501,数理計画法,6T,2,熊木 武志,Ｃ３０２,本
+秋学期,水,5-6,専門,情,19-16,3,32502,数理解析,6X,2,熊木 武志,Ｃ３０２,本
+秋学期,水,7-8,教養B,全,26-16,1,54616,Introduction to Computational Linguistics,GV,2,金丸 敏幸,【OIC】H346,本
+秋学期,水,7-8,教養B,全,26-16,1,34948,Understanding Visual Culture,G2,2,永田 彰子,Ｆ２０５,本
+秋学期,水,7-8,教養B,全,26-20,1.2のみ,31058,Cross-cultural Encounters 1,G4,2,曹 瑞林,Ａ２１０,抽選
+秋学期,水,7-8,教養B,全,19-16,1,31059,Cross-cultural Encounters,G4,2,曹 瑞林,Ａ２１0,抽選
+秋学期,水,7-8,教養D,全,26-16,1,34976,スポーツのサイエンス,G4,2,塩澤 華奈,Ｃ２０２,抽選
+秋学期,水,7-8,教養D,全,26-16,1,35030,スポーツ方法実習Ⅱ(B)【バレーボール】,6,1,櫻木 規美子,１アリーナ,抽選
+秋学期,水,7-8,教養E,全,26-16,1,17104,"教養ゼミナール ※テーマは、シラバスを確認してください。",18,2,出口 雅久,【衣笠】洋YY502,抽選
+秋学期,水,7-8,教養E,全,26-16,1,35066,"教養ゼミナール ※テーマは、シラバスを確認してください。",51,2,谷浦 秀夫,Ｃ５０９,抽選
+秋学期,水,7-8,教養E,全,26-16,1,54684,"教養ゼミナール ※テーマは、シラバスを確認してください。",61,2,田中 力,【OIC】AC242,抽選
+秋学期,水,7-8,基礎専,全,26-16,1～4のみ,32153,"専門ゼミナール【エネルギー活用とシミュレーション・状態推定技術～EV、蓄電池と社会～】 ※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TE,2,福井 正博,情処演P33,抽選
+秋学期,水,7-8,基礎専,全,26-20,1～4のみ,32156,理工系日本語の技法,TA,2,"永井 清、中島 梓",Ｆ３０６,抽選
+秋学期,水,7-8,基礎専,全,19-16,1～4のみ,32157,特殊講義（基礎専門）Ⅰ（理工系日本語の技法）,X,2,"永井 清、中島 梓",Ｆ３０６,抽選
+秋学期,水,7-10,専門,電,25-16,2,32406,電気電子工学実験Ⅱ,C8,2,"渡邉 歴、沼居 貴陽、難波 巧、藤井 茉美、諏訪田 剛","EX1 1階 電気電子工学第1応用実験室",本
+秋学期,水,7-8,専門,電,24-16,3,32438,通信工学,A8,2,佐野 明秀,Ｆ２０４,本
+秋学期,水,7-10,専門,情,25-16,2,32487,電子情報工学実験Ⅱ,6T,2,"熊木 武志、藤野 毅、白畑 正芳、中山 良平、大倉 俊介、酒井 晃二、村田 乾","ﾛｰﾑ記念館5階大会議室および各実験室(1､14回目はﾛｰﾑで実施)",本
+秋学期,水,7-8,専門,情,24-16,3,32503,情報理論,6T,2,久保 博嗣,Ｆ３０３,本
+秋学期,水,9-10,教養A,全,26-16,1,34888,新しい日本史像,T,2,浅野 咲,Ｃ４０３,抽選
+秋学期,水,9-10,教養E,全,26-16,1,17112,"教養ゼミナール ※テーマは、シラバスを確認してください。",26,2,小林 香保里,【衣笠】以IG206,抽選
+秋学期,水,9-10,教養E,全,26-16,1,35064,"教養ゼミナール ※テーマは、シラバスを確認してください。",49,2,稲津 哲也,Ｃ５０６,抽選
+秋学期,水,9-10,教養E,全,26-16,1,54688,"教養ゼミナール ※テーマは、シラバスを確認してください。",65,2,北原 聡,【OIC】H241,抽選
+秋学期,水,9-10,基礎専,全,26-16,1,32040,生物科学１,TB,2,北村 佳久,Ｃ３０２,本
+秋学期,水,9-10,基礎専,全,26-16,1～4のみ,32149,"専門ゼミナール【木造用語の基礎知識】※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TA,2,遠藤 直久,Ｆ１０７,選考
+秋学期,水,9-10,基礎専,全,26-20,1～4のみ,32158,理工系日本語の技法,TB,2,"永井 清、中島 梓",Ｆ３０６,抽選
+秋学期,水,9-10,基礎専,全,19-16,1～4のみ,32159,特殊講義（基礎専門）Ⅰ（理工系日本語の技法）,Y,2,"永井 清、中島 梓",Ｆ３０６,抽選
+秋学期,水,9-10,自由,全,26-20,1,32191,"特殊講義（自由）Ⅰ（数学基礎） ※21年度以前入学者の環境都市工学科の受講希望者は事務室受付",TB,2,岡田 薫,Ｆ１１０,本
+秋学期,水,9-10,自由,数・物・電・情・機・ロ・建,19-16,1,32192,"特殊講義（自由）Ⅰ（数学基礎） ※19年度以前入学者の受講希望者は事務室受付/環境都市工学科は受講不可",Y,2,岡田 薫,Ｆ１１０,本
+秋学期,水,9-10,専門,電,25-16,1,32373,電磁気学Ⅱ,X8,2,野坂 秀之,Ｆ１１２,本
+秋学期,水,9-10,専門,電,24-16,3,32429,パワーエレクトロニクスⅡ,T8,2,川畑 良尚,Ｆ３０１,本
+秋学期,水,@,教養A,全,26-20,1,34926,"データエンジニアリング基礎 ※配信開始期間や視聴期間はシラバスやmoodle＋Rを確認してください。",G2,2,西門 秀人,-,抽選
+秋学期,木,1-2,教養A,全,26-16,1,34838,文学と社会,G2,2,三浦 俊介,Ｃ３０３,抽選
+秋学期,木,1-2,教養A,全,26-16,1,34873,現代の世界経済,G2,2,大橋 陽,Ｃ３０１,抽選
+秋学期,木,1-2,教養B,全,26-16,1,54617,History of Computing,GV,2,SVININ MIKHAIL,【OIC】H323,本
+秋学期,木,1-2,教養B,全,26-16,1,54621,Language in Politics,GV,2,DAUER HARRY,【OIC】H241,抽選
+秋学期,木,1-2,教養D,全,26-16,1,35031,スポーツ方法実習Ⅱ(C)【卓球】,1,1,櫻木 規美子,２アリーナ,抽選
+秋学期,木,1-2,基礎専,情,26-20,1,31929,数学Ⅳ（線形代数）,6T,2,岡田 薫,Ｆ２０４,本
+秋学期,木,1-2,基礎専,情,19-16,1,31930,数学Ⅳ,6X,2,岡田 薫,Ｆ２０４,本
+秋学期,木,1-2,基礎専,全,26-16,1,32043,生物科学２,TB,2,藤原 摩耶子,Ｃ３０２,抽選
+秋学期,木,1-2,基礎専,電・情,25-16,2,32059,物質科学,GB,2,深尾 浩次,Ｃ４０１,本
+秋学期,木,1-2,基礎専,全,26-20,1,32147,技術者倫理,TB,2,田岡 直規,Ｃ４０２,本
+秋学期,木,1-2,基礎専,全,19-16,1,32148,特殊講義（基礎専門）Ⅰ（技術者倫理）,Y,2,田岡 直規,Ｃ４０２,本
+秋学期,木,1-2,専門,電,26-16,1,32374,電磁気学演習,T8,1,沼居 貴陽,Ｃ１０９,本
+秋学期,木,1-2,専門,電,24-16,3,32444,画像情報工学,T8,2,藤枝 一郎,Ｆ１０１,本
+秋学期,木,3-4,教養A,全,26-16,1,34841,現代の教育,D,2,矢野 浩二朗,Ｃ２０３,抽選
+秋学期,木,3-4,教養B,全,26-16,1,54619,Understanding Language,GV,2,"杉野 直樹、杉森 直樹",【OIC】H243,抽選
+秋学期,木,3-4,教養B,全,26-20,1,31064,Academic Skills 2,G2,2,田村 優,Ａ２１１,抽選
+秋学期,木,3-4,教養B,全,19-16,1,31065,Intermediate Academic Skills,G2,2,田村 優,Ａ２１１,抽選
+秋学期,木,3-4,教養D,全,26-16,1,35014,スポーツ方法実習Ⅱ(A)【テニス】,2,1,櫻木 規美子,テニス C,抽選
+秋学期,木,3-4,教養D,全,26-16,1,35020,スポーツ方法実習Ⅱ(A)【ソフトボール】,8,1,舎利弗 学,第１ G,抽選
+秋学期,木,3-4,教養D,全,26-16,1,35027,スポーツ方法実習Ⅱ(B)【水中運動】,3,1,田中 貴大,ｽﾎﾟｺﾓﾌﾟｰﾙ,抽選
+秋学期,木,3-4,教養E,全,26-16,1,17115,"教養ゼミナール ※テーマは、シラバスを確認してください。",29,2,"近藤 雪絵、木村 修平",【衣笠】諒RY209,抽選
+秋学期,木,3-4,教養E,全,26-16,1,35065,"教養ゼミナール ※テーマは、シラバスを確認してください。",50,2,田中 謙,Ｃ５０４,抽選
+秋学期,木,3-4,教養E,全,26-16,1,54685,"教養ゼミナール ※テーマは、シラバスを確認してください。",62,2,山崎 文徳,【OIC】AN421,抽選
+秋学期,木,3-4,教養E,全,26-16,1,54686,"教養ゼミナール ※テーマは、シラバスを確認してください。",63,2,西村 陽造,【OIC】AS468,抽選
+秋学期,木,3-4,基礎専,数・物・情・機・ロ・環・建/全,25-20/19-16,2,31814,情報科学Ⅱ,TB,2,手嶋 教之,Ｃ４０２,本
+秋学期,木,3-4,基礎専,情,26-16,1,31825,情報処理,6T,2,久保 博嗣,Ｃ１０６,本
+秋学期,木,3-4,基礎専,全,26-20,1～4のみ,32160,理工系日本語の技法,TC,2,"伊津野 和行、中島 梓",Ｆ１０７,抽選
+秋学期,木,3-4,基礎専,全,19-16,1～4のみ,32161,特殊講義（基礎専門）Ⅰ（理工系日本語の技法）,Z,2,"伊津野 和行、中島 梓",Ｆ１０７,抽選
+秋学期,木,3-4,専門,電,26-16,1,32368,電気回路Ⅰ,A8,2,瀧口 浩一,Ｃ３０１,本
+秋学期,木,3-4,専門,電,26-16,1,32369,電気回路Ⅰ,B8,2,田口 耕造,C701,本
+秋学期,木,3-4,専門,電,25-16,2,32389,電子回路Ⅰ,A8,2,宇野 重康,C801,本
+秋学期,木,3-4,専門,電,24-16,3,32439,通信工学,B8,2,久保 幸弘,Ｆ３０１,本
+秋学期,木,3-4,専門,情,25-16,2,32489,通信理論,6T,2,三木 信彦,Ｆ３０５,本
+秋学期,木,3-4,専門,情,24-16,3,32495,制御工学,6T,2,道関 隆国,Ｆ２０２,本
+秋学期,木,5-6,立命館/教養E,全,26-20/19-16,1.2のみ/2,34783,ピア・サポート論,G5,2,河井 亨,Ｃ６０５,抽選
+秋学期,木,5-6,教養A,全,26-16,1,34891,中国の国家と社会,G3,2,廣居 健,Ｃ２０３,抽選
+秋学期,木,5-6,教養A,全,26-16,1,34922,情報技術と社会,TB,2,山下 洋一,Ｃ３０２,抽選
+秋学期,木,5-6,教養B,全,26-20,1,31071,"Cross-cultural Seminar ※テーマは、シラバスを確認してください。",G1,2,田村 優,C701,抽選
+秋学期,木,5-6,教養B,全,19-16,1,31072,"Intermediate Seminar ※テーマは、シラバスを確認してください。",G1,2,田村 優,C701,抽選
+秋学期,木,5-6,教養D,全,26-16,1,35018,スポーツ方法実習Ⅱ(A)【テニス】,6,1,櫻木 規美子,テニス C,抽選
+秋学期,木,5-6,教養D,全,26-16,1,35041,スポーツ方法実習Ⅱ(D)【バドミントン】,5,1,岡松 秀房,２アリーナ,抽選
+秋学期,木,5-6,教養D,全,26-16,1,35044,スポーツ方法実習Ⅱ(D)【アダプテッドスポーツ】,8,1,永浜 明子,１アリーナ,抽選
+秋学期,木,5-6,教養E,全,26-16,1,17113,"教養ゼミナール ※テーマは、シラバスを確認してください。",27,2,三沢 あき子,【衣笠】存ZS302,抽選
+秋学期,木,5-6,基礎専,数・物・電・情・機・ロ・建,25-16,2,31804,"環境科学 ※環境都市工学科は受講不可",TB,2,"惣田 訓、三浦 陽介、林 東範",Ｃ４０３,本
+秋学期,木,5-6,基礎専,全,26-16,1～4のみ,32150,"専門ゼミナール【目に見えない画像を可視化する技術】 ※「専門ゼミナール」は4単位までの単位取得可能。5単位以上の登録があった場合は、事務室で削除します。",TB,2,藤枝 一郎,Ｃ５０５,抽選
+秋学期,木,5-6,自由,全,26-20,1,32189,"特殊講義（自由）Ⅰ（数学基礎） ※21年度以前入学者の環境都市工学科の受講希望者は事務室受付",TA,2,北沢 孝司,Ｆ１０４,本
+秋学期,木,5-6,自由,数・物・電・情・機・ロ・建,19-16,1,32190,"特殊講義（自由）Ⅰ（数学基礎） ※19年度以前入学者の受講希望者は事務室受付/環境都市工学科は受講不可",X,2,北沢 孝司,Ｆ１０４,本
+秋学期,木,5-6,専門,電,25-16,2,32388,複素関数論,T8,2,久保 幸弘,Ｃ３０５,本
+秋学期,木,5-6,専門,電,24-16,3,32420,電子回路演習,A8,1,宇野 重康,Ｆ１０８,本
+秋学期,木,5-6,専門,情,26-16,1,32466,電子情報工学演習,6A,1,"泉 知論、田中 亜実、久保 博嗣、LI QI",moodle+Rのコースを確認してください。,事務室
+秋学期,木,5-6,専門,情,26-16,1,32467,電子情報工学演習,6B,1,"田中 亜実、泉 知論、久保 博嗣、LI QI",moodle+Rのコースを確認してください。,事務室
+秋学期,木,5-6,専門,情,26-16,1,32468,電子情報工学演習,6C,1,"久保 博嗣、泉 知論、田中 亜実、LI QI",moodle+Rのコースを確認してください。,事務室
+秋学期,木,5-6,専門,情,25-16,2,32488,信号処理,6T,2,佐保 賢志,Ｃ１０８,本
+秋学期,木,7-8,教養A,全,26-20,1,34918,情報の数理,G1,2,大坂 博幸,Ｃ２０２,抽選
+秋学期,木,7-8,教養E,全,26-16,1,17110,"教養ゼミナール ※テーマは、シラバスを確認してください。",24,2,桐村 喬,【衣笠】洋YY401,抽選
+秋学期,木,7-8,教養E,全,26-16,1,54687,"教養ゼミナール ※テーマは、シラバスを確認してください。",64,2,安江 則子,【OIC】AS469,抽選
+秋学期,木,7-8,基礎専,情,26-20,1,32007,数学演習Ⅱ（微分積分・線形代数）,6F,1,池田 憲明,Ｆ１０７,本
+秋学期,木,7-8,基礎専,情,19-16,1,32008,数学演習Ⅱ,6U,1,池田 憲明,Ｆ１０７,本
+秋学期,木,7-8,基礎専,情,26-20,1,32009,数学演習Ⅱ（微分積分・線形代数）,6G,1,北沢 孝司,Ｆ１０８,本
+秋学期,木,7-8,基礎専,情,19-16,1,32010,数学演習Ⅱ,6V,1,北沢 孝司,Ｆ１０８,本
+秋学期,木,7-8,基礎専,情,26-20,1,32011,数学演習Ⅱ（微分積分・線形代数）,6H,1,内海 和樹,Ｆ１０２,本
+秋学期,木,7-8,基礎専,情,19-16,1,32012,数学演習Ⅱ,6W,1,内海 和樹,Ｆ１０２,本
+秋学期,木,7-10,専門,電,25-16,2,32405,電気電子工学実験Ⅱ,B8,2,"田口 耕造、沼居 貴陽、藤枝 一郎、繁田 光浩","EX1 1階 電気電子工学第1応用実験室",本
+秋学期,木,7-8,専門,電,24-16,3,32432,電気法規,T8,2,柿ヶ野 浩明,Ｃ３０２,本
+秋学期,木,7-8,専門,情,24-20/19-16,3/4,32513,組み込みシステム,6T,2,神原 弘之,Ｐ２０１,本
+秋学期,木,9-10,教養A,全,26-16,1,34862,現代社会と法,G2,2,山本 忠,Ｃ３０１,抽選
+秋学期,木,9-10,教養B,全,26-16,1,15262,Introduction to the United Nations,RB,2,石川 幸子,【衣笠】明MG002,選考
+秋学期,木,9-10,教養E,全,26-16,1,31083,"特殊講義（教養Ｅ）Ⅰ(アントレプレナーシップと事業創造) ※21年度以前入学者の環境都市工学科は受講不可",T,2,"高山 茂、藤田 勝利",Ｆ３０６,本
+秋学期,木,9-10,専門,電,25-16,1,32370,電気回路Ⅱ,X8,2,川畑 良尚,Ｃ１０３,本
+秋学期,木,9-10,専門,情,24-16,3,32500,ソフトウェア工学,6T,2,神原 弘之,Ｐ２０１,本
+秋学期,金,1-2,教養D,全,26-16,1,35021,スポーツ方法実習Ⅱ(A)【ソフトボール】,9,1,櫻木 規美子,第１ G,抽選
+秋学期,金,1-2,教養D,全,26-16,1,35033,スポーツ方法実習Ⅱ(C)【エクササイズ】,3,1,山口 慶一,トレ R,抽選
+秋学期,金,1-2,教養D,全,26-16,1,35042,スポーツ方法実習Ⅱ(D)【バドミントン】,6,1,新野 守,２アリーナ,抽選
+秋学期,金,1-2,基礎専,電,26-20,1,31925,数学Ⅳ（線形代数）,A8,2,松田 凌,Ｆ２０４,本
+秋学期,金,1-2,基礎専,電,19-16,1,31926,数学Ⅳ,W8,2,松田 凌,Ｆ２０４,本
+秋学期,金,1-2,基礎専,電,26-20,1,31927,数学Ⅳ（線形代数）,B8,2,原瀬 晋,Ｆ２０５,本
+秋学期,金,1-2,基礎専,電,19-16,1,31928,数学Ⅳ,X8,2,原瀬 晋,Ｆ２０５,本
+秋学期,金,1-2,基礎専,電・情・機・ロ・建/環都,24-19/24-18,3,32174,職業指導,T,2,川崎 一彦,Ｆ１０８,本
+秋学期,金,1-2,専門,情,26-16,1,32460,電気回路Ⅰ,6T,2,藤田 智弘,Ｃ３０２,本
+秋学期,金,3-4,教養B,全,26-20,1,34929,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",4,2,山中 司,Ｃ５１０,抽選
+秋学期,金,3-4,教養B,全,19-16,1,34930,"Theme Study ※テーマは、シラバスを確認してください。",4,2,山中 司,Ｃ５１０,抽選
+秋学期,金,3-4,教養B,全,26-16,1,54618,"Digital Archives: Applications of ICT to the Humanities",GV,2,田中 覚,【OIC】H348,抽選
+秋学期,金,3-4,教養D,全,26-16,1,35022,スポーツ方法実習Ⅱ(A)【バスケットボール】,10,1,菅 唯志,１アリーナ,抽選
+秋学期,金,3-4,教養D,全,26-16,1,35035,スポーツ方法実習Ⅱ(C)【エクササイズ】,5,1,櫻木 規美子,トレ R,抽選
+秋学期,金,3-4,教養D,全,26-16,1,35036,スポーツ方法実習Ⅱ(C)【ウォーキング】,6,1,上道 和毅,ｽﾎﾟｺﾓ多目的,抽選
+秋学期,金,3-4,教養D,全,26-16,1,35043,スポーツ方法実習Ⅱ(D)【バドミントン】,7,1,永原 悠利,２アリーナ,抽選
+秋学期,金,3-4,教養E,全,26-16,1,35067,"教養ゼミナール ※テーマは、シラバスを確認してください。",52,2,高田 達之,Ｃ５０１,抽選
+秋学期,金,3-4,基礎専,電,26-20,1,31999,数学演習Ⅱ（微分積分・線形代数）,K8,1,松田 凌,Ｆ１１０,本
+秋学期,金,3-4,基礎専,電,19-16,1,32000,数学演習Ⅱ,S8,1,松田 凌,Ｆ１１０,本
+秋学期,金,3-4,基礎専,電,26-20,1,32001,数学演習Ⅱ（微分積分・線形代数）,L8,1,原瀬 晋,Ｆ１１１,本
+秋学期,金,3-4,基礎専,電,19-16,1,32002,数学演習Ⅱ,T8,1,原瀬 晋,Ｆ１１１,本
+秋学期,金,3-4,基礎専,電,26-20,1,32003,数学演習Ⅱ（微分積分・線形代数）,M8,1,神 貞介,Ｆ１０９,本
+秋学期,金,3-4,基礎専,電,19-16,1,32004,数学演習Ⅱ,U8,1,神 貞介,Ｆ１０９,本
+秋学期,金,3-4,基礎専,電,26-20,1,32005,数学演習Ⅱ（微分積分・線形代数）,N8,1,吉永 崇志,Ｆ１１２,本
+秋学期,金,3-4,基礎専,電,19-16,1,32006,数学演習Ⅱ,V8,1,吉永 崇志,Ｆ１１２,本
+秋学期,金,3-4,専門,電,24-16,3,32443,数理プログラミング演習,T8,1,"福水 洋平、岡野 訓尚、中野 道彦",情処演C21,本
+秋学期,金,5-6,教養A,全,26-16,1,34840,現代の教育,T,2,藤本 学,Ｃ３０４,抽選
+秋学期,金,5-6,教養A,全,26-20,1,34857,映像メディア実践入門,G2,2,辻野 理花,Ｃ６０７,抽選
+秋学期,金,5-6,教養A,全,19-16,1,34858,特殊講義（映像メディア実践入門）,G2,2,辻野 理花,Ｃ６０７,抽選
+秋学期,金,5-6,教養B,全,26-20,1,34933,"Liberal Arts Seminar ※テーマは、シラバスを確認してください。",6,2,人見 麻紀,Ｒ３１０,抽選
+秋学期,金,5-6,教養B,全,19-16,1,34934,"Theme Study ※テーマは、シラバスを確認してください。",6,2,人見 麻紀,Ｒ３１０,抽選
+秋学期,金,5-6,教養D,全,26-16,1,34978,現代人とヘルスケア,T,2,川瀬 広大,Ｃ３０１,抽選
+秋学期,金,5-6,教養D,全,26-16,1,35016,スポーツ方法実習Ⅱ(A)【バスケットボール】,4,1,櫻木 規美子,１アリーナ,抽選
+秋学期,金,5-6,教養E,全,26-16,1,35060,"教養ゼミナール ※テーマは、シラバスを確認してください。",45,2,久保 幹,Ｃ５１０,抽選
+秋学期,金,5-6,基礎専,電,26-20,1,32094,振動波動入門,A8,2,濱地 賢太郎,Ｆ２０４,本
+秋学期,金,5-6,基礎専,電,26-20,1,32095,振動波動入門,B8,2,青田 容明,Ｆ２０５,本
+秋学期,金,5-6,基礎専,情,25-20,1,32108,電磁気学入門,6X,2,大坂 寿之,Ｆ２０１,本
+秋学期,金,5-6,基礎専,情,19-16,1,32109,物理科学３,6X,2,大坂 寿之,Ｆ２０１,本
+秋学期,金,5-6,専門,電,25-16,2,32393,"論理回路 ※2025年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",C8,2,峯元 高志,Ｆ１０４,本
+秋学期,金,5-6,専門,電,25-16,2,32394,"論理回路 ※2025年度以前入学者のみ受講可能。以外の学生の登録があった場合は、事務室で削除します。",D8,2,原 知彦,Ｆ１０７,本
+秋学期,金,7-8,立命館/教養E,全,26-20/19-16,1.2のみ/2,34784,ピア・サポート論,G6,2,藤本 学,Ｃ６０６,抽選
+秋学期,金,7-8,教養A,全,26-20,1,34853,音楽原論,G2,2,舩木 理悠,Ｃ３０３,抽選
+秋学期,金,7-8,教養A,全,26-16,1,34876,現代の経営,Y,2,RAUPACH SUMIYA JOERG,Ｃ２０２,抽選
+秋学期,金,7-8,教養D,全,26-16,1,34967,スポーツの歴史と発展,TB,2,西原 茂樹,Ｃ３０１,抽選
+秋学期,金,7-8,教養D,全,26-16,1,35023,スポーツ方法実習Ⅱ(A)【バスケットボール】,11,1,櫻木 規美子,１アリーナ,抽選
+秋学期,金,7-8,教養E,全,26-16,1,35070,異文化間テーマ演習,G1,2,石塚 健,C701,選考
+秋学期,金,7-8,基礎専,数・電・情・機・ロ・建/環都,19-16/21-18,1,32103,"物理科学２ ※物理科学科は受講不可",Y,2,濱地 賢太郎,Ｆ１０１,本
+秋学期,金,7-8,基礎専,全,26-16,1,32126,特殊講義（基礎専門）Ⅰ（技術者のキャリア）,TB,2,塩見 康博,Ｐ２０１,抽選
+秋学期,金,7-8,基礎専,電・情,25-19,2,32177,情報と職業,48,2,"柿ヶ野 浩明、福水 洋平、宇野 重康、佐野 明秀、野坂 秀之、岡野 訓尚、久保 幸弘",Ｆ１０２,本
+秋学期,金,9-10,教養B,全,26-16,1,51384,Cross Border Policy Issues,P,2,OMONDI ISAAC ONYANGO,【OIC】AS364,抽選
+秋学期,金,9-10,教養E,全,26-16,1,17109,"教養ゼミナール ※テーマは、シラバスを確認してください。",23,2,佐野 まさき,【衣笠】清SE001,抽選
+秋学期,金,9-10,教養E,全,26-16,1,35069,"教養ゼミナール ※テーマは、シラバスを確認してください。",54,2,RAUPACH SUMIYA JOERG,Ａ２０６,抽選
+秋学期,金,9-10,教養E,全,26-16,1,35068,"教養ゼミナール ※テーマは、シラバスを確認してください。",53,2,小沢 道紀,Ａ２０５,抽選
+秋学期,金,9-10,基礎専,数・物・情・機・ロ・環・建/全,25-20/19-16,2,31813,情報科学Ⅱ,TA,2,手嶋 教之,Ｃ３０３,本
+通年,@,@,立命館,全,25-20,2,16806,"平和人権フィールドスタディ【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GR,2,鄭 雅英,-,選考
+通年,@,@,教養A,全,19-16,1,16807,"国際平和交流セミナー【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GR,2,鄭 雅英,-,選考
+通年,@,@,立命館,全,25-20,2,16808,"平和人権フィールドスタディ【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GS,2,秋吉 恵,-,選考
+通年,@,@,教養A,全,19-16,1,16809,"国際平和交流セミナー【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GS,2,秋吉 恵,-,選考
+通年,@,@,立命館,全,25-20,2,16810,"平和人権フィールドスタディ【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GT,2,山崎 智文,-,選考
+通年,@,@,教養A,全,19-16,1,16811,"国際平和交流セミナー【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GT,2,山崎 智文,-,選考
+通年,@,@,立命館,全,25-20,2,16812,"平和人権フィールドスタディ【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GU,2,山崎 文徳,-,選考
+通年,@,@,教養A,全,19-16,1,16813,"国際平和交流セミナー【通年】 ※テーマや授業スケジュールについては、シラバスを確認してください。",GU,2,山崎 文徳,-,選考
+通年,@,@,教養C,全,25-20,2,16984,"コーオプ演習（理論）【通年】※授業スケジュールの詳細はシラバスを確認してください。",G,2,奥貫 麻紀,-,選考
+通年,@,@,教養C,全,19-16,3,16985,"コーオプ教育概論【通年】 ※授業スケジュールの詳細はシラバスを確認してください。",G,2,奥貫 麻紀,-,選考
+通年,@,@,教養E,全,26-16,1,31080,"特殊講義（教養Ｅ）Ⅰ（清水寺の△△の○○（良い点）を磨け！、もしくは□□（困っている点）を救え!）【通年】 ※21年度以前入学者の環境都市工学科は受講不可 ※授業スケジュールや応募方法の詳細は、最終ページの「2026年度『キャンパスプラザ京都』開講科目」で確認してください。",T,2,"宗本 晋作、青柳 憲昌、遠藤 直久",ＣＰ京都,選考（コンソ枠）
+通年,@,@,教養E,全,26-16,1,31077,"特殊講義（教養Ｅ）Ⅰ「京都の文化遺産とその保護〜清水地域の防災への取り組み」 ※授業スケジュールや応募方法の詳細は、最終ページの「2026年度『キャンパスプラザ京都』開講科目」で確認してください。",T,2,大窪 健之,ＣＰ京都,選考（コンソ枠）
+</script>
+
+<script>
+    let rawData = [];
+    let headers = [];
+    
+    // カラムの自動判別用
+    let colDay = '', colPeriod = '', colTerm = '', colDept = '', colCategory = '';
+    let colSubject = '', colTeacher = '', colRoom = '';
+    
+    let currentSortColumn = null;
+    let sortAsc = true;
+    const selectedCells = new Set();
+
+    let mySchedule = {};
+    let savedScheduleRowIds = new Set();
+    let currentDataKey = '';
+
+    const fileInput = document.getElementById('csvFileInput');
+    const encodingSelect = document.getElementById('encodingSelect');
+    
+    fileInput.addEventListener('change', handleFile);
+
+    // ==========================================
+    // 曜日・時限の変換ロジック
+    // ==========================================
+    function getDaysList(dayStr) {
+        if (!dayStr) return ["他"];
+        const week = ["月", "火", "水", "木", "金", "土", "日"];
+        let found = week.filter(d => dayStr.includes(d));
+        if (found.length === 0) return ["他"];
+        return found;
+    }
+
+    function getLogicalPeriods(periodStr) {
+        if (!periodStr) return [];
+        if (periodStr.includes('@') || periodStr.includes('＠')) return ['@'];
+
+        let raw = [];
+        const matchRange = periodStr.match(/(\d+)\s*[-〜~]\s*(\d+)/);
+        if (matchRange) {
+            const start = parseInt(matchRange[1], 10);
+            const end = parseInt(matchRange[2], 10);
+            for (let i = start; i <= end; i++) raw.push(i);
+        } else {
+            const nums = periodStr.match(/\d+/g);
+            if (nums) raw = nums.map(n => parseInt(n, 10));
+        }
+
+        const mapped = raw.map(n => Math.ceil(n / 2));
+        return Array.from(new Set(mapped));
+    }
+
+    async function handleFile() {
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const selectedEncoding = encodingSelect.value === 'Shift_JIS' ? 'shift-jis' : 'utf-8';
+        try {
+            const buffer = await file.arrayBuffer();
+            const csvText = new TextDecoder(selectedEncoding).decode(buffer);
+            loadCsvText(csvText, file.name);
+        } catch (error) {
+            console.error(error);
+            alert('CSVの読み込みに失敗しました。文字コード設定を変更して再度お試しください。');
+        }
+    }
+
+    function loadCsvText(csvText, sourceLabel = '埋め込みデータ') {
+        if (!csvText || !csvText.trim()) return;
+
+        Papa.parse(csvText, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                rawData = results.data;
+                headers = results.meta.fields;
+                currentDataKey = buildDataKey(sourceLabel, rawData.length, headers);
+                
+                // 必須・検索用カラム
+                colDay = headers.find(h => h.includes('曜日') || h.includes('曜')) || '';
+                colPeriod = headers.find(h => h.includes('時限') || h.includes('時') || h.includes('コマ')) || '';
+                colTerm = headers.find(h => h.includes('学期')) || '';
+                colDept = headers.find(h => h.includes('学科')) || '';
+                colCategory = headers.find(h => h.includes('区分')) || '';
+                
+                // 表示用カラムの推測 (精度向上：「CD」や「コード」を除外、科目名を最優先)
+                colSubject = headers.find(h => h === '科目名' || h === '授業名' || h === '科目') ||
+                             headers.find(h => (h.includes('科目') || h.includes('授業')) && !h.includes('CD') && !h.includes('コード')) || 
+                             headers[0];
+                colTeacher = headers.find(h => h.includes('教員') || h.includes('担当')) || '';
+                colRoom = headers.find(h => h.includes('教室') || h.includes('部屋')) || '';
+                
+                initUI();
+                restoreScheduleState();
+                updateView();
+                renderMyTimetable();
+                
+                document.getElementById('leftPane').style.display = 'block';
+                document.getElementById('rightPane').style.display = 'block';
+                document.getElementById('datasetInfo').textContent = `${sourceLabel} / ${rawData.length}件 / ${headers.length}列`;
+            }
+        });
+    }
+
+    function loadEmbeddedCsv() {
+        const embeddedCsv = document.getElementById('embeddedCsvData').textContent.trim();
+        if (!embeddedCsv) return;
+        loadCsvText(embeddedCsv, '埋め込みCSV');
+    }
+
+    function buildDataKey(fileName, rowCount, fieldList) {
+        return `timetable-tool::${fileName}::${rowCount}::${fieldList.join('|')}`;
+    }
+
+    function getStorageKey() {
+        return currentDataKey ? `${currentDataKey}::schedule` : '';
+    }
+
+    function getRowId(index) {
+        return String(index);
+    }
+
+    function saveScheduleState() {
+        const storageKey = getStorageKey();
+        if (!storageKey) return;
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(savedScheduleRowIds)));
+    }
+
+    function restoreScheduleState() {
+        savedScheduleRowIds = new Set();
+        mySchedule = {};
+        const storageKey = getStorageKey();
+        if (!storageKey) return;
+        try {
+            const saved = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            saved.forEach(id => {
+                const index = parseInt(id, 10);
+                if (!Number.isNaN(index) && rawData[index]) {
+                    addClassToSchedule(index, true);
+                }
+            });
+        } catch (error) {
+            console.warn('saved schedule restore failed', error);
+        }
+    }
+
+    function initUI() {
+        populateSelect('termSelect', colTerm, 'すべての学期');
+        populateCheckboxes('deptCheckboxes', 'deptContainer', colDept);
+        populateCheckboxes('categoryCheckboxes', 'categoryContainer', colCategory);
+        
+        buildColumnSelect('colDaySelect', colDay, false);
+        buildColumnSelect('colPeriodSelect', colPeriod, false);
+        buildColumnSelect('colSubjectSelect', colSubject, true);
+        buildColumnSelect('colTeacherSelect', colTeacher, true);
+        buildColumnSelect('colRoomSelect', colRoom, true);
+
+        buildMatrix();
+    }
+
+    function buildColumnSelect(elementId, autoSelectedVal, allowEmpty) {
+        const select = document.getElementById(elementId);
+        select.innerHTML = allowEmpty ? '<option value="">(非表示)</option>' : '<option value="">-- 未選択 --</option>';
+        headers.forEach(h => {
+            let opt = document.createElement('option');
+            opt.value = h;
+            opt.textContent = h;
+            if (h === autoSelectedVal) opt.selected = true;
+            select.appendChild(opt);
+        });
+    }
+
+    // 絞り込み用の列が変更されたとき
+    function onFilterColumnChange() {
+        colDay = document.getElementById('colDaySelect').value;
+        colPeriod = document.getElementById('colPeriodSelect').value;
+        buildMatrix();
+        updateView();
+    }
+
+    // 表示用の列が変更されたとき
+    function onDisplayColumnChange() {
+        colSubject = document.getElementById('colSubjectSelect').value;
+        colTeacher = document.getElementById('colTeacherSelect').value;
+        colRoom = document.getElementById('colRoomSelect').value;
+        renderMyTimetable(); // 時間割の再描画のみ行う
+    }
+
+    function buildMatrix() {
+        const matrixTable = document.getElementById('matrixTable');
+        matrixTable.innerHTML = '';
+        selectedCells.clear();
+
+        if (!colDay || !colPeriod) {
+            matrixTable.innerHTML = '<tr><td style="padding: 20px; color: #e74c3c;">設定で「曜日列」と「時限列」を選択してください</td></tr>';
+            return;
+        }
+
+        let matrixDaysSet = new Set();
+        rawData.forEach(d => {
+            getDaysList(d[colDay]).forEach(day => matrixDaysSet.add(day));
+        });
+        const orderDay = {"月":1, "火":2, "水":3, "木":4, "金":5, "土":6, "日":7, "他":8};
+        const days = Array.from(matrixDaysSet).sort((a, b) => orderDay[a] - orderDay[b]);
+        
+        let maxP = 0;
+        let hasOnline = false;
+        rawData.forEach(d => {
+            const lp = getLogicalPeriods(d[colPeriod]);
+            lp.forEach(p => {
+                if (p === '@') hasOnline = true;
+                else if (typeof p === 'number') maxP = Math.max(maxP, p);
+            });
+        });
+        if (maxP === 0) maxP = 6;
+
+        const periods = [];
+        for (let i = 1; i <= maxP; i++) periods.push(i);
+        if (hasOnline) periods.push('@');
+
+        if (days.length === 0) {
+            matrixTable.innerHTML = '<tr><td style="padding: 20px; color: #7f8c8d;">データがありません</td></tr>';
+            return;
+        }
+
+        let tr = document.createElement('tr');
+        tr.appendChild(document.createElement('th')); 
+        days.forEach(d => {
+            let th = document.createElement('th');
+            th.textContent = d;
+            tr.appendChild(th);
+        });
+        matrixTable.appendChild(tr);
+
+        periods.forEach(p => {
+            let r = document.createElement('tr');
+            let th = document.createElement('th');
+            th.textContent = (p === '@') ? 'ｵﾝﾗｲﾝ' : p + '限'; 
+            r.appendChild(th);
+
+            days.forEach(d => {
+                let td = document.createElement('td');
+                td.textContent = '＋';
+                td.addEventListener('click', () => {
+                    const cellKey = `${d}|${p}`;
+                    td.classList.toggle('selected');
+                    if (td.classList.contains('selected')) selectedCells.add(cellKey);
+                    else selectedCells.delete(cellKey);
+                    updateView();
+                });
+                r.appendChild(td);
+            });
+            matrixTable.appendChild(r);
+        });
+    }
+
+    function populateSelect(elementId, colName, defaultText) {
+        const select = document.getElementById(elementId);
+        select.innerHTML = `<option value="">${defaultText}</option>`;
+        if (!colName) { select.style.display = 'none'; return; }
+        select.style.display = 'block';
+        const uniqueValues = Array.from(new Set(rawData.map(d => d[colName]).filter(v => v))).sort();
+        uniqueValues.forEach(val => {
+            let option = document.createElement('option');
+            option.value = val;
+            option.textContent = val;
+            select.appendChild(option);
+        });
+    }
+
+    function populateCheckboxes(listId, containerId, colName) {
+        const listDiv = document.getElementById(listId);
+        const containerDiv = document.getElementById(containerId);
+        listDiv.innerHTML = '';
+        if (!colName) { containerDiv.style.display = 'none'; return; }
+        containerDiv.style.display = 'block';
+
+        let elementSet = new Set();
+        rawData.forEach(d => {
+            let val = d[colName];
+            if (val) {
+                val.split(/[、,・\n]+/).forEach(p => {
+                    let trimmed = p.trim();
+                    if (trimmed) elementSet.add(trimmed);
+                });
+            }
+        });
+
+        Array.from(elementSet).sort().forEach(val => {
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = val;
+            checkbox.addEventListener('change', updateView);
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(val));
+            listDiv.appendChild(label);
+        });
+    }
+
+    function clearMatrix() {
+        selectedCells.clear();
+        document.querySelectorAll('.matrix td').forEach(td => td.classList.remove('selected'));
+        updateView();
+    }
+
+    function resetFilters() {
+        document.getElementById('keywordInput').value = '';
+        document.getElementById('termSelect').value = '';
+        document.querySelectorAll('#deptCheckboxes input, #categoryCheckboxes input').forEach(input => {
+            input.checked = false;
+        });
+        clearMatrix();
+    }
+
+    function updateActiveFiltersSummary(keyword, termFilter, selectedDepts, selectedCategories, isSortMode) {
+        const container = document.getElementById('activeFilters');
+        const pills = [];
+        if (keyword) pills.push(`キーワード: ${keyword}`);
+        if (termFilter) pills.push(`学期: ${termFilter}`);
+        if (selectedDepts.length > 0) pills.push(`学科: ${selectedDepts.join(', ')}`);
+        if (selectedCategories.length > 0) pills.push(`区分: ${selectedCategories.join(', ')}`);
+        if (selectedCells.size > 0) pills.push(`${isSortMode ? '優先表示' : '時間割絞り込み'}: ${selectedCells.size}コマ`);
+        if (pills.length === 0) pills.push('現在は絞り込みなし');
+
+        container.innerHTML = '';
+        pills.forEach(text => {
+            const pill = document.createElement('div');
+            pill.className = 'filter-pill';
+            pill.textContent = text;
+            container.appendChild(pill);
+        });
+    }
+
+    function getScheduledClassCount() {
+        return savedScheduleRowIds.size;
+    }
+
+    function isRowInSchedule(row) {
+        const index = rawData.indexOf(row);
+        return savedScheduleRowIds.has(getRowId(index));
+    }
+
+    function updateView() {
+        let result = rawData.slice();
+        const keyword = document.getElementById('keywordInput').value.trim().toLowerCase();
+        const termFilter = document.getElementById('termSelect').value;
+        const getCheckedValues = (listId) => Array.from(document.querySelectorAll(`#${listId} input:checked`)).map(cb => cb.value);
+        const selectedDepts = getCheckedValues('deptCheckboxes');
+        const selectedCategories = getCheckedValues('categoryCheckboxes');
+        const modeRadio = document.querySelector('input[name="ttMode"]:checked');
+        const isSortMode = modeRadio && modeRadio.value === 'sort';
+
+        result = result.filter(row => {
+            if (keyword) {
+                const rowText = Object.values(row).join(' ').toLowerCase();
+                if (!rowText.includes(keyword)) return false;
+            }
+            if (termFilter && row[colTerm] !== termFilter) return false;
+            if (selectedDepts.length > 0) {
+                const rDept = row[colDept] || '';
+                if (!selectedDepts.some(dept => rDept.includes(dept))) return false;
+            }
+            if (selectedCategories.length > 0) {
+                const rCategory = row[colCategory] || '';
+                if (!selectedCategories.some(cat => rCategory.includes(cat))) return false;
+            }
+            if (!isSortMode && selectedCells.size > 0) {
+                const mappedP = getLogicalPeriods(row[colPeriod]);
+                const daysR = getDaysList(row[colDay]);
+                
+                const matched = Array.from(selectedCells).some(cell => {
+                    const [sDay, sPeriod] = cell.split('|');
+                    const checkPeriod = sPeriod === '@' ? '@' : parseInt(sPeriod, 10);
+                    return daysR.includes(sDay) && mappedP.includes(checkPeriod);
+                });
+                if (!matched) return false;
+            }
+            return true;
+        });
+
+        if (isSortMode && selectedCells.size > 0) {
+            result.sort((a, b) => {
+                const mappedA = getLogicalPeriods(a[colPeriod]);
+                const daysA = getDaysList(a[colDay]);
+                const aMatch = Array.from(selectedCells).some(cell => {
+                    const [sDay, sPeriod] = cell.split('|');
+                    const checkPeriod = sPeriod === '@' ? '@' : parseInt(sPeriod, 10);
+                    return daysA.includes(sDay) && mappedA.includes(checkPeriod);
+                });
+                
+                const mappedB = getLogicalPeriods(b[colPeriod]);
+                const daysB = getDaysList(b[colDay]);
+                const bMatch = Array.from(selectedCells).some(cell => {
+                    const [sDay, sPeriod] = cell.split('|');
+                    const checkPeriod = sPeriod === '@' ? '@' : parseInt(sPeriod, 10);
+                    return daysB.includes(sDay) && mappedB.includes(checkPeriod);
+                });
+                if (aMatch && !bMatch) return -1;
+                if (!aMatch && bMatch) return 1;
+                return 0;
+            });
+        }
+
+        if (currentSortColumn) {
+            result.sort((a, b) => {
+                let valA = a[currentSortColumn] || '';
+                let valB = b[currentSortColumn] || '';
+                if (!isNaN(valA) && !isNaN(valB)) { valA = Number(valA); valB = Number(valB); }
+                if (valA < valB) return sortAsc ? -1 : 1;
+                if (valA > valB) return sortAsc ? 1 : -1;
+                return 0;
+            });
+        }
+        updateActiveFiltersSummary(keyword, termFilter, selectedDepts, selectedCategories, isSortMode);
+        renderTable(result);
+    }
+
+    function renderTable(data) {
+        const thead = document.querySelector('#dataTable thead');
+        const tbody = document.querySelector('#dataTable tbody');
+        thead.innerHTML = '';
+        
+        const trHead = document.createElement('tr');
+        const thAction = document.createElement('th');
+        thAction.textContent = '登録';
+        trHead.appendChild(thAction);
+
+        headers.forEach(h => {
+            const th = document.createElement('th');
+            th.textContent = h;
+            th.className = 'sort-icon';
+            if (currentSortColumn === h) th.className = sortAsc ? 'sort-asc' : 'sort-desc';
+            th.addEventListener('click', () => {
+                if (currentSortColumn === h) sortAsc = !sortAsc;
+                else { currentSortColumn = h; sortAsc = true; }
+                updateView();
+            });
+            trHead.appendChild(th);
+        });
+        thead.appendChild(trHead);
+        
+        tbody.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            
+            const tdAction = document.createElement('td');
+            tdAction.style.textAlign = 'center';
+            const btnAdd = document.createElement('button');
+            btnAdd.className = 'btn-add';
+            const alreadyAdded = isRowInSchedule(row);
+            btnAdd.textContent = alreadyAdded ? '登録済み' : '追加';
+            if (alreadyAdded) btnAdd.classList.add('is-added');
+            
+            const originalIndex = rawData.indexOf(row);
+            btnAdd.onclick = () => addClassToSchedule(originalIndex);
+            
+            tdAction.appendChild(btnAdd);
+            tr.appendChild(tdAction);
+
+            headers.forEach(h => {
+                const td = document.createElement('td');
+                td.textContent = row[h] !== undefined ? row[h] : '';
+                tr.appendChild(td);
+            });
+            fragment.appendChild(tr);
+        });
+        if (data.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = headers.length + 1;
+            td.className = 'table-empty';
+            td.innerHTML = '<strong>該当する授業が見つかりませんでした。</strong><br>キーワードや曜日・時限の条件を少しゆるめてみてください。';
+            tr.appendChild(td);
+            fragment.appendChild(tr);
+        }
+        tbody.appendChild(fragment);
+        document.getElementById('resultCount').textContent = `表示件数: ${data.length} 件 / 全 ${rawData.length} 件`;
+        document.getElementById('resultCountBadge').textContent = String(data.length);
+        document.getElementById('scheduleCountBadge').textContent = String(getScheduledClassCount());
+    }
+
+    // ==========================================
+    // マイ時間割の制御ロジック
+    // ==========================================
+
+    function addClassToSchedule(index, skipConfirm = false) {
+        const row = rawData[index];
+        const rowId = getRowId(index);
+        if (!row) return;
+        const days = getDaysList(row[colDay]);
+        const pNums = getLogicalPeriods(row[colPeriod]);
+
+        if (days.length === 0 || pNums.length === 0) {
+            alert('曜日または時限が正しく読み取れないため追加できません。');
+            return;
+        }
+
+        let conflict = false;
+        for (let d of days) {
+            for (let p of pNums) {
+                let key = `${d}|${p}`;
+                if (mySchedule[key] && mySchedule[key].length > 0) conflict = true;
+            }
+        }
+        
+        if (conflict && !pNums.includes('@') && !skipConfirm) {
+            if (!confirm('このコマには既に授業が登録されています。重複して追加しますか？')) {
+                return;
+            }
+        }
+
+        for (let d of days) {
+            for (let p of pNums) {
+                let key = `${d}|${p}`;
+                if (!mySchedule[key]) mySchedule[key] = [];
+                if (!mySchedule[key].includes(row)) {
+                    mySchedule[key].push(row);
+                }
+            }
+        }
+        savedScheduleRowIds.add(rowId);
+        saveScheduleState();
+        updateView();
+        renderMyTimetable();
+    }
+
+    function removeClassFromSchedule(targetRow) {
+        const index = rawData.indexOf(targetRow);
+        savedScheduleRowIds.delete(getRowId(index));
+        for (let key in mySchedule) {
+            mySchedule[key] = mySchedule[key].filter(r => r !== targetRow);
+            if (mySchedule[key].length === 0) {
+                delete mySchedule[key];
+            }
+        }
+        saveScheduleState();
+        updateView();
+        renderMyTimetable();
+    }
+
+    function clearSchedule() {
+        if(confirm('時間割を全てクリアしてもよろしいですか？')) {
+            mySchedule = {};
+            savedScheduleRowIds = new Set();
+            saveScheduleState();
+            updateView();
+            renderMyTimetable();
+        }
+    }
+
+    function renderMyTimetable() {
+        const theadTr = document.querySelector('#myTimetable thead tr');
+        const tbody = document.querySelector('#myTimetable tbody');
+        
+        const baseDays = ["月", "火", "水", "木", "金"];
+        const extraDays = ["土", "日", "他"].filter(d => Object.keys(mySchedule).some(k => k.startsWith(d)));
+        const displayDays = [...baseDays, ...extraDays];
+        const classCount = getScheduledClassCount();
+
+        theadTr.innerHTML = '<th style="width: 40px;"></th>';
+        displayDays.forEach(d => {
+            let th = document.createElement('th');
+            th.textContent = d;
+            theadTr.appendChild(th);
+        });
+
+        tbody.innerHTML = '';
+
+        let maxPeriod = 6;
+        let hasOnlineSchedule = false;
+        for (let key in mySchedule) {
+            let p = key.split('|')[1];
+            if (p === '@') {
+                hasOnlineSchedule = true;
+            } else {
+                let pNum = parseInt(p, 10);
+                if (pNum > maxPeriod) maxPeriod = pNum;
+            }
+        }
+
+        const renderRow = (pLabel, isOnline) => {
+            let tr = document.createElement('tr');
+            let th = document.createElement('th');
+            th.textContent = pLabel;
+            tr.appendChild(th);
+
+            for (let d of displayDays) {
+                let td = document.createElement('td');
+                let cellKey = isOnline ? `${d}|@` : `${d}|${pLabel}`;
+                let rowDataArray = mySchedule[cellKey];
+
+                if (rowDataArray && rowDataArray.length > 0) {
+                    rowDataArray.forEach(rowData => {
+                        const block = document.createElement('div');
+                        block.className = 'class-block';
+                        
+                        const subj = colSubject ? (rowData[colSubject] || '(不明)') : '(科目列未設定)';
+                        const teach = colTeacher ? (rowData[colTeacher] || '') : '';
+                        const room = colRoom ? (rowData[colRoom] || '') : '';
+                        const subjectDiv = document.createElement('div');
+                        subjectDiv.className = 'cell-subject';
+                        subjectDiv.title = subj;
+                        subjectDiv.textContent = subj;
+                        block.appendChild(subjectDiv);
+
+                        if (teach) {
+                            const teacherDiv = document.createElement('div');
+                            teacherDiv.className = 'cell-teacher';
+                            teacherDiv.textContent = teach;
+                            block.appendChild(teacherDiv);
+                        }
+                        if (room) {
+                            const roomDiv = document.createElement('div');
+                            roomDiv.className = 'cell-room';
+                            roomDiv.textContent = room;
+                            block.appendChild(roomDiv);
+                        }
+
+                        const btnDel = document.createElement('button');
+                        btnDel.className = 'btn-remove';
+                        btnDel.innerHTML = '×';
+                        btnDel.onclick = () => removeClassFromSchedule(rowData);
+                        block.appendChild(btnDel);
+
+                        td.appendChild(block);
+                    });
+                }
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        };
+
+        for (let p = 1; p <= maxPeriod; p++) {
+            renderRow(p, false);
+        }
+
+        if (hasOnlineSchedule) {
+            renderRow('ｵﾝﾗｲﾝ', true);
+        }
+
+        if (classCount === 0) {
+            tbody.innerHTML = `<tr><td class="empty-state" colspan="${displayDays.length + 1}"><strong>まだ授業が登録されていません</strong>左の一覧から気になる授業を追加すると、ここに時間割が組み上がります。</td></tr>`;
+        }
+
+        document.getElementById('scheduleMeta').textContent = classCount > 0
+            ? `${classCount}件の授業を登録中です。削除ボタンでいつでも外せます。`
+            : '授業を追加すると、ここに曜日ごとの配置が表示されます。';
+        document.getElementById('scheduleCountBadge').textContent = String(classCount);
+    }
+
+    loadEmbeddedCsv();
+</script>
+</body>
+</html>
